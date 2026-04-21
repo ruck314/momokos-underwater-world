@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1a4a8a">
+  <meta name="description" content="Help Momoko save the underwater world! A fun pixel-art adventure game.">
+  <title>Momoko's Under Water World</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <div id="rotate-hint">
+    <div class="icon">&#x1F504;</div>
+    <div class="hint-line">Please rotate your device to landscape mode!</div>
+    <div class="hint-line hint-line-ja">デバイスを よこむきにしてください！</div>
+  </div>
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+  <script src="./js/i18n.js"></script>
+  <script src="./js/audio.js"></script>
+  <script src="./js/input.js"></script>
+  <script src="./js/levels.js"></script>
+  <script src="./js/entities.js"></script>
+  <script src="./js/ui.js"></script>
+  <script src="./js/engine.js"></script>
+  <script src="./js/pwa.js"></script>
+</body>
+</html>

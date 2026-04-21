@@ -1,0 +1,23 @@
+{
+  "name": "Momoko's Under Water World",
+  "short_name": "Momoko",
+  "description": "A fun underwater adventure game! Help Momoko save the ocean!",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0a1628",
+  "theme_color": "#1a4a8a",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%231a4a8a'/><text x='96' y='120' font-size='100' text-anchor='middle' fill='white'>🫧</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='64' fill='%231a4a8a'/><text x='256' y='320' font-size='260' text-anchor='middle' fill='white'>🫧</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
