@@ -26,12 +26,27 @@
   var GAME_W = 800;   /* logical game viewport width */
   var GAME_H = 480;   /* logical game viewport height */
 
-  /* Helpers: on touch devices the canvas is wider than the game view
-     (control strips live on each side). gameOffsetX() returns the canvas
-     x-coordinate where the game viewport begins. */
+  /* Helpers: the canvas's backing store is scaled by devicePixelRatio for
+     crisp rendering, so canvas.width / canvas.height are *not* logical
+     pixels. These helpers return the logical (pre-DPR) dimensions that
+     all game/input math reasons about. */
+  function dprFactor() {
+    return Math.min(3, window.devicePixelRatio || 1);
+  }
+  function canvasLogicalW() {
+    if (!canvas) return 0;
+    return canvas.width / dprFactor();
+  }
+  function canvasLogicalH() {
+    if (!canvas) return 0;
+    return canvas.height / dprFactor();
+  }
+  /* On touch devices the canvas is wider than the game viewport (control
+     strips live on each side). gameOffsetX() is the logical x-coordinate
+     where the game viewport begins. */
   function gameOffsetX() {
     if (!canvas) return 0;
-    return Math.max(0, Math.floor((canvas.width - GAME_W) / 2));
+    return Math.max(0, Math.floor((canvasLogicalW() - GAME_W) / 2));
   }
   function sideStripW() {
     return gameOffsetX();
@@ -65,8 +80,8 @@
   function touchToCanvas(touch) {
     if (!canvasRect) canvasRect = canvas.getBoundingClientRect();
     return {
-      x: (touch.clientX - canvasRect.left) / (canvasRect.width / canvas.width),
-      y: (touch.clientY - canvasRect.top) / (canvasRect.height / canvas.height)
+      x: (touch.clientX - canvasRect.left) / (canvasRect.width / canvasLogicalW()),
+      y: (touch.clientY - canvasRect.top) / (canvasRect.height / canvasLogicalH())
     };
   }
 
@@ -145,7 +160,7 @@
     var hasSideStrips = stripW > 0;
     if (hasSideStrips) {
       var leftCx = stripW / 2;
-      var rightCx = canvas.width - stripW / 2;
+      var rightCx = canvasLogicalW() - stripW / 2;
       var cy = GAME_H / 2;
       /* D-pad: pad=44, spacing=52 → outer dimension 192 px fits in a
          200-wide strip with 4 px margin on each side. */
@@ -213,16 +228,18 @@
     if (!canvas) return;
     var stripW = sideStripW();
     if (stripW > 0) {
+      var lw = canvasLogicalW();
       paintSidePanel(c, 0, stripW, /*innerEdgeX*/ stripW);
-      paintSidePanel(c, canvas.width - stripW, stripW, /*innerEdgeX*/ canvas.width - stripW - 1);
+      paintSidePanel(c, lw - stripW, stripW, /*innerEdgeX*/ lw - stripW - 1);
     }
     if (showButtons) drawTouchButtons(c);
   }
 
   function paintSidePanel(c, x, w, innerEdgeX) {
+    var h = canvasLogicalH();
     c.save();
     c.fillStyle = '#081224';
-    c.fillRect(x, 0, w, canvas.height);
+    c.fillRect(x, 0, w, h);
     /* Subtle glow along the inner edge so the strip reads as a bezel,
        not as a letterbox. */
     var fromX = innerEdgeX < x + w / 2 ? innerEdgeX : innerEdgeX - 10;
@@ -236,12 +253,12 @@
       grad.addColorStop(1, 'rgba(100,160,220,0.25)');
     }
     c.fillStyle = grad;
-    c.fillRect(Math.min(fromX, toX), 0, 10, canvas.height);
+    c.fillRect(Math.min(fromX, toX), 0, 10, h);
     c.strokeStyle = '#1a3a60';
     c.lineWidth = 2;
     c.beginPath();
     c.moveTo(innerEdgeX + 0.5, 0);
-    c.lineTo(innerEdgeX + 0.5, canvas.height);
+    c.lineTo(innerEdgeX + 0.5, h);
     c.stroke();
     c.restore();
   }
@@ -323,8 +340,8 @@
       cx = e.clientX;
       cy = e.clientY;
     }
-    var canvasX = (cx - rect.left) / (rect.width / canvas.width);
-    var canvasY = (cy - rect.top) / (rect.height / canvas.height);
+    var canvasX = (cx - rect.left) / (rect.width / canvasLogicalW());
+    var canvasY = (cy - rect.top) / (rect.height / canvasLogicalH());
     return { x: canvasX - gameOffsetX(), y: canvasY };
   }
 

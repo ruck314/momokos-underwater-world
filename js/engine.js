@@ -1068,8 +1068,15 @@
       GAME_X = 0;
     }
     CANVAS_H = H;
-    canvas.width = CANVAS_W;
-    canvas.height = CANVAS_H;
+    /* DPI-aware backing store: render at physical pixel density so text
+       and curves stay crisp on retina / high-DPR devices. Cap at 3× to
+       keep the backing store reasonable on pathological displays. The
+       context's base transform is scaled by dpr so all game code keeps
+       drawing in logical CANVAS_W × CANVAS_H coordinates. */
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    canvas.width = CANVAS_W * dpr;
+    canvas.height = CANVAS_H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     /* Enable image smoothing for smooth curves */
     ctx.imageSmoothingEnabled = true;
