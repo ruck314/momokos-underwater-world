@@ -1,4 +1,7 @@
-var CACHE_NAME = 'momoko-v1';
+/* Bump this string alongside Game.VERSION in js/engine.js on every release.
+   A new CACHE_NAME forces the activate handler to purge the old cache, so
+   returning visitors pick up the new bundle on their next page load. */
+var CACHE_NAME = 'momoko-v1.0.0';
 var ASSETS = [
   './',
   './index.html',
@@ -35,10 +38,25 @@ self.addEventListener('activate', function (e) {
   self.clients.claim();
 });
 
+/* Network-first with cache fallback: always try the network so returning
+   visitors see fresh code, but fall back to the cache when offline so the
+   PWA still works without a connection. Successful responses refresh the
+   cache entry so the offline fallback stays current. */
 self.addEventListener('fetch', function (e) {
+  if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then(function (cached) {
-      return cached || fetch(e.request);
-    })
+    fetch(e.request)
+      .then(function (res) {
+        if (res && res.ok && res.type === 'basic') {
+          var clone = res.clone();
+          caches.open(CACHE_NAME).then(function (cache) {
+            cache.put(e.request, clone);
+          });
+        }
+        return res;
+      })
+      .catch(function () {
+        return caches.match(e.request);
+      })
   );
 });
