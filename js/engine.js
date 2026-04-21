@@ -7,15 +7,19 @@
   /* On touch devices we pad the canvas with a control strip on each side of
      the 800×480 game viewport (D-pad on the left, BUBBLE on the right) so
      the landscape-phone aspect ratio stays wide and the thumbs never cover
-     the playfield. GAME_X is the x-offset where the game viewport begins
-     inside the canvas; the render loop translates by it so game code keeps
-     using logical 0..W coordinates. */
-  var TOUCH_SIDE_W = 200;
+     the playfield. The left strip is wider than the right so the D-pad
+     has room to breathe on narrow iPhones (smaller thumbs reach the
+     directions more comfortably than they reach a single BUBBLE target).
+     GAME_X is the x-offset where the game viewport begins inside the
+     canvas; the render loop translates by it so game code keeps using
+     logical 0..W coordinates. */
+  var TOUCH_LEFT_W = 260;
+  var TOUCH_RIGHT_W = 200;
   var CANVAS_W = W;
   var CANVAS_H = H;
   var GAME_X = 0;
   /* Version stamp shown on the title screen. Bump manually at release time. */
-  Game.VERSION = 'v1.0.0';
+  Game.VERSION = 'v1.1.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -59,6 +63,10 @@
   var respawnPos = { x: 0, y: 0 };
   var npcCooldowns = {};
   var beachSeen = false;
+  /* True when the most recent GAME_OVER happened during the boss fight, so
+     the retry button can drop the player just outside the boss arena
+     instead of sending them all the way back to the level start. */
+  var lastDeathInBoss = false;
 
   /* ---- Background parallax layers ---- */
   var bgLayers = [];
@@ -162,7 +170,7 @@
     for (var i = 0; i < level.spawns.enemies.length; i++) {
       var e = level.spawns.enemies[i];
       if (e.type === 'fish') {
-        enemies.push(new Game.entities.Fish(e.x, e.y, e.pattern, e.dir));
+        enemies.push(new Game.entities.Fish(e.x, e.y, e.pattern, e.dir, e.species));
       } else if (e.type === 'octopus') {
         enemies.push(new Game.entities.Octopus(e.x, e.y));
       }
@@ -203,6 +211,21 @@
 
     initBgLayers();
     initAmbientBubbles();
+  }
+
+  /* Respawn position after losing a heart. During the boss fight we
+     don't want the player kicked all the way back to the level start –
+     drop them just outside the boss arena so they can rejoin quickly. */
+  function respawnPlayerAfterHit() {
+    if (bossActivated && boss && !boss.defeated) {
+      var rx = Math.max(0, level.bossAreaX - 100);
+      var ry = 220;
+      player.respawn(rx, ry);
+      camera.x = Math.max(0, Math.min(rx - W / 2 + player.w / 2, level.width - W));
+    } else {
+      player.respawn(respawnPos.x, respawnPos.y);
+      camera.x = 0;
+    }
   }
 
   /* ---- Collision helpers ---- */
@@ -395,14 +418,13 @@
               var died = player.takeDamage();
               if (died && !player.alive) {
                 if (player.health <= 0) {
+                  lastDeathInBoss = bossActivated && boss && !boss.defeated;
                   state = State.GAME_OVER;
                   Game.audio.stopMusic();
                   Game.audio.play('gameOver');
                 }
               } else if (died) {
-                /* Respawn at beginning */
-                player.respawn(respawnPos.x, respawnPos.y);
-                camera.x = 0;
+                respawnPlayerAfterHit();
               }
               break;
             }
@@ -418,14 +440,13 @@
               var died2 = player.takeDamage();
               if (died2 && !player.alive) {
                 if (player.health <= 0) {
+                  lastDeathInBoss = true;
                   state = State.GAME_OVER;
                   Game.audio.stopMusic();
                   Game.audio.play('gameOver');
                 }
               } else if (died2) {
-                player.respawn(respawnPos.x, respawnPos.y);
-                camera.x = 0;
-                /* Re-enter boss area if needed */
+                respawnPlayerAfterHit();
               }
               break;
             }
@@ -454,7 +475,7 @@
           var dist = Math.sqrt(
             Math.pow(player.x - npc.x, 2) + Math.pow(player.y - npc.y, 2)
           );
-          if (dist < 60 && !npc.talking && (!npcCooldowns[npcType] || npcCooldowns[npcType] <= 0)) {
+          if (dist < 80 && !npc.talking && (!npcCooldowns[npcType] || npcCooldowns[npcType] <= 0)) {
             npc.interact();
             npcCooldowns[npcType] = 300; /* cooldown frames before re-trigger */
           }
@@ -997,7 +1018,7 @@
 
       case State.GAME_OVER:
         var gAction = Game.ui.handleGameOverClick(mx, my);
-        if (gAction === 'retry') startGame();
+        if (gAction === 'retry') startGame(lastDeathInBoss);
         break;
 
       case State.VICTORY:
@@ -1016,15 +1037,32 @@
     }
   }
 
-  /* ---- Start game ---- */
-  function startGame() {
+  /* ---- Start game ----
+     When fromBoss is true (retry after dying to the boss), drop the player
+     just outside the boss arena and re-arm the boss so they don't have to
+     swim through the whole level again. */
+  function startGame(fromBoss) {
     loadLevel(0);
-    state = State.PLAYING;
     camera = { x: 0, y: 0 };
-    beachSeen = false;
     Game.audio.init();
     Game.audio.resume();
-    Game.audio.startMusic('bgm');
+    if (fromBoss) {
+      var rx = Math.max(0, level.bossAreaX - 100);
+      var ry = 220;
+      player.x = rx;
+      player.y = ry;
+      respawnPos = { x: rx, y: ry };
+      boss.activate();
+      bossActivated = true;
+      beachSeen = true;
+      camera.x = Math.max(0, Math.min(rx - W / 2 + player.w / 2, level.width - W));
+      Game.audio.startMusic('boss');
+    } else {
+      beachSeen = false;
+      Game.audio.startMusic('bgm');
+    }
+    lastDeathInBoss = false;
+    state = State.PLAYING;
   }
 
   /* ---- Game loop ---- */
@@ -1061,8 +1099,12 @@
        matches landscape phones. */
     var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
     if (isTouch) {
-      CANVAS_W = W + TOUCH_SIDE_W * 2;
-      GAME_X = TOUCH_SIDE_W;
+      CANVAS_W = W + TOUCH_LEFT_W + TOUCH_RIGHT_W;
+      GAME_X = TOUCH_LEFT_W;
+      /* Expose to input.js so the touch-strip layout / click mapping uses
+         the same asymmetric widths. */
+      Game.TOUCH_LEFT_W = TOUCH_LEFT_W;
+      Game.TOUCH_RIGHT_W = TOUCH_RIGHT_W;
     } else {
       CANVAS_W = W;
       GAME_X = 0;

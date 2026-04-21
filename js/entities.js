@@ -389,21 +389,50 @@
   };
 
   /* ========== FISH (Enemy) ========== */
-  function Fish(x, y, pattern, dir) {
+  /* species: 'tropical' (default, fast-swimming reef fish), 'swordfish'
+     (long/fast with a bill), 'blowfish' (round/slow, spiky, 2 HP),
+     'clownfish' (orange with white stripes), 'angelfish' (tall/thin with
+     trailing fins). Appearance, size, hp, and speed vary per species so
+     levels can mix them for visual and gameplay variety. */
+  function Fish(x, y, pattern, dir, species) {
     this.spawnX = x;
     this.spawnY = y;
     this.x = x;
     this.y = y;
-    this.w = 24;
-    this.h = 16;
-    this.hp = 1;
+    this.species = species || 'tropical';
     this.pattern = pattern || 'sine';
     this.dir = dir || -1;
-    this.speed = 1.2;
     this.timer = Math.random() * 100;
     this.active = true;
     this.flash = 0;
-    this.color = ['#ee4444', '#44bb44', '#4488ee', '#eeaa22'][Math.floor(Math.random() * 4)];
+
+    if (this.species === 'swordfish') {
+      this.w = 36; this.h = 14;
+      this.hp = 2;
+      this.speed = 1.8;
+      this.color = '#3a5a78';
+    } else if (this.species === 'blowfish') {
+      this.w = 26; this.h = 24;
+      this.hp = 2;
+      this.speed = 0.7;
+      this.color = '#d9b24a';
+    } else if (this.species === 'clownfish') {
+      this.w = 24; this.h = 16;
+      this.hp = 1;
+      this.speed = 1.4;
+      this.color = '#ff7a22';
+    } else if (this.species === 'angelfish') {
+      this.w = 22; this.h = 22;
+      this.hp = 1;
+      this.speed = 1.0;
+      this.color = '#f2d36b';
+    } else {
+      /* tropical */
+      this.w = 24; this.h = 16;
+      this.hp = 1;
+      this.speed = 1.2;
+      this.color = ['#ee4444', '#44bb44', '#4488ee', '#eeaa22'][Math.floor(Math.random() * 4)];
+    }
   }
 
   Fish.prototype.update = function () {
@@ -450,32 +479,31 @@
 
     if (this.flash > 0 && this.flash % 2 === 0) { c.restore(); return; }
 
-    /* Body */
-    c.fillStyle = this.color;
+    if (this.species === 'swordfish') drawSwordfish(c, sx, sy, this.color, this.timer);
+    else if (this.species === 'blowfish') drawBlowfish(c, sx, sy, this.color, this.timer);
+    else if (this.species === 'clownfish') drawClownfish(c, sx, sy, this.timer);
+    else if (this.species === 'angelfish') drawAngelfish(c, sx, sy, this.color, this.timer);
+    else drawTropicalFish(c, sx, sy, this.color);
+
+    c.restore();
+  };
+
+  function drawTropicalFish(c, sx, sy, color) {
+    c.fillStyle = color;
     c.beginPath();
     c.ellipse(sx + 12, sy + 8, 12, 7, 0, 0, Math.PI * 2);
     c.fill();
-
-    /* Tail */
     c.beginPath();
     c.moveTo(sx + 22, sy + 8);
     c.lineTo(sx + 28, sy + 2);
     c.lineTo(sx + 28, sy + 14);
     c.closePath();
     c.fill();
-
-    /* Eye */
     c.fillStyle = '#ffffff';
-    c.beginPath();
-    c.arc(sx + 6, sy + 6, 3, 0, Math.PI * 2);
-    c.fill();
+    c.beginPath(); c.arc(sx + 6, sy + 6, 3, 0, Math.PI * 2); c.fill();
     c.fillStyle = '#000000';
-    c.beginPath();
-    c.arc(sx + 5, sy + 6, 1.5, 0, Math.PI * 2);
-    c.fill();
-
-    /* Fin */
-    c.fillStyle = this.color;
+    c.beginPath(); c.arc(sx + 5, sy + 6, 1.5, 0, Math.PI * 2); c.fill();
+    c.fillStyle = color;
     c.globalAlpha = 0.7;
     c.beginPath();
     c.moveTo(sx + 10, sy + 3);
@@ -483,9 +511,172 @@
     c.lineTo(sx + 18, sy + 3);
     c.closePath();
     c.fill();
+  }
 
-    c.restore();
-  };
+  function drawSwordfish(c, sx, sy, color, timer) {
+    /* Long slender body */
+    c.fillStyle = color;
+    c.beginPath();
+    c.ellipse(sx + 18, sy + 7, 16, 5, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Silver belly stripe */
+    c.fillStyle = '#b9cddf';
+    c.beginPath();
+    c.ellipse(sx + 18, sy + 9, 14, 2.4, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Bill (long pointed snout) */
+    c.strokeStyle = '#2a3f55';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(sx + 2, sy + 7);
+    c.lineTo(sx - 10, sy + 7);
+    c.stroke();
+    /* Dorsal fin */
+    c.fillStyle = '#2f4a63';
+    c.beginPath();
+    c.moveTo(sx + 12, sy + 3);
+    c.lineTo(sx + 18, sy - 4);
+    c.lineTo(sx + 22, sy + 3);
+    c.closePath();
+    c.fill();
+    /* Tail – crescent */
+    c.beginPath();
+    c.moveTo(sx + 32, sy + 7);
+    c.lineTo(sx + 38, sy - 1);
+    c.lineTo(sx + 35, sy + 7);
+    c.lineTo(sx + 38, sy + 15);
+    c.closePath();
+    c.fill();
+    /* Eye */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(sx + 5, sy + 6, 2, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#000000';
+    c.beginPath(); c.arc(sx + 4.5, sy + 6, 1, 0, Math.PI * 2); c.fill();
+  }
+
+  function drawBlowfish(c, sx, sy, color, timer) {
+    /* Puff up and down so it feels alive */
+    var puff = 1 + Math.sin(timer * 0.06) * 0.08;
+    var cx = sx + 13, cy = sy + 12;
+    var r = 11 * puff;
+    /* Spikes first (behind body) */
+    c.strokeStyle = '#8a6a20';
+    c.lineWidth = 1.5;
+    for (var i = 0; i < 12; i++) {
+      var a = (i / 12) * Math.PI * 2;
+      c.beginPath();
+      c.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      c.lineTo(cx + Math.cos(a) * (r + 4), cy + Math.sin(a) * (r + 4));
+      c.stroke();
+    }
+    /* Body */
+    c.fillStyle = color;
+    c.beginPath();
+    c.arc(cx, cy, r, 0, Math.PI * 2);
+    c.fill();
+    /* Spots */
+    c.fillStyle = '#8a6a20';
+    c.beginPath(); c.arc(cx - 3, cy - 3, 1.4, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(cx + 4, cy + 1, 1.2, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(cx - 1, cy + 4, 1.2, 0, Math.PI * 2); c.fill();
+    /* Tiny tail */
+    c.fillStyle = color;
+    c.beginPath();
+    c.moveTo(cx + r - 1, cy);
+    c.lineTo(cx + r + 5, cy - 3);
+    c.lineTo(cx + r + 5, cy + 3);
+    c.closePath();
+    c.fill();
+    /* Eye */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(cx - 5, cy - 2, 2.4, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#000000';
+    c.beginPath(); c.arc(cx - 5.5, cy - 2, 1.2, 0, Math.PI * 2); c.fill();
+    /* Pouty mouth */
+    c.strokeStyle = '#663311';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(cx - 9, cy + 2, 1.5, -0.4, 0.4);
+    c.stroke();
+  }
+
+  function drawClownfish(c, sx, sy, timer) {
+    /* Orange body */
+    c.fillStyle = '#ff7a22';
+    c.beginPath();
+    c.ellipse(sx + 12, sy + 8, 12, 7, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Three white stripes */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.ellipse(sx + 6,  sy + 8, 1.8, 6.2, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 13, sy + 8, 1.8, 6.6, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 19, sy + 8, 1.4, 5.8, 0, 0, Math.PI * 2); c.fill();
+    /* Black stripe outlines for pop */
+    c.strokeStyle = '#1a1a1a';
+    c.lineWidth = 0.8;
+    c.beginPath(); c.ellipse(sx + 6,  sy + 8, 1.8, 6.2, 0, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); c.ellipse(sx + 13, sy + 8, 1.8, 6.6, 0, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); c.ellipse(sx + 19, sy + 8, 1.4, 5.8, 0, 0, Math.PI * 2); c.stroke();
+    /* Tail */
+    c.fillStyle = '#ff7a22';
+    c.beginPath();
+    c.moveTo(sx + 22, sy + 8);
+    c.lineTo(sx + 28, sy + 2);
+    c.lineTo(sx + 28, sy + 14);
+    c.closePath();
+    c.fill();
+    /* Fin */
+    c.globalAlpha = 0.85;
+    c.beginPath();
+    c.moveTo(sx + 10, sy + 3);
+    c.lineTo(sx + 14, sy - 3);
+    c.lineTo(sx + 18, sy + 3);
+    c.closePath();
+    c.fill();
+    c.globalAlpha = 1;
+    /* Eye */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(sx + 4, sy + 6, 2.2, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#000000';
+    c.beginPath(); c.arc(sx + 3.5, sy + 6, 1.1, 0, Math.PI * 2); c.fill();
+  }
+
+  function drawAngelfish(c, sx, sy, color, timer) {
+    /* Tall disc-shaped body */
+    c.fillStyle = color;
+    c.beginPath();
+    c.ellipse(sx + 11, sy + 11, 9, 10, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Vertical dark stripes */
+    c.fillStyle = 'rgba(80, 50, 20, 0.7)';
+    c.fillRect(sx + 7, sy + 2, 1.5, 18);
+    c.fillRect(sx + 12, sy + 2, 1.5, 18);
+    /* Top trailing fin */
+    c.fillStyle = color;
+    c.beginPath();
+    c.moveTo(sx + 10, sy + 2);
+    c.quadraticCurveTo(sx + 6, sy - 8, sx + 14, sy - 6);
+    c.closePath();
+    c.fill();
+    /* Bottom trailing fin */
+    c.beginPath();
+    c.moveTo(sx + 10, sy + 20);
+    c.quadraticCurveTo(sx + 6, sy + 30, sx + 14, sy + 28);
+    c.closePath();
+    c.fill();
+    /* Tail */
+    c.beginPath();
+    c.moveTo(sx + 19, sy + 11);
+    c.lineTo(sx + 26, sy + 5);
+    c.lineTo(sx + 26, sy + 17);
+    c.closePath();
+    c.fill();
+    /* Eye */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(sx + 5, sy + 9, 2, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#000000';
+    c.beginPath(); c.arc(sx + 4.5, sy + 9, 1, 0, Math.PI * 2); c.fill();
+  }
 
   /* ========== OCTOPUS (Enemy) ========== */
   function Octopus(x, y) {

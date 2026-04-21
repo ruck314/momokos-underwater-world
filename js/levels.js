@@ -119,38 +119,39 @@
       player: { x: 60, y: 240 },
 
       enemies: [
-        /* Section 1 – easy fish */
-        { type: 'fish', x: 500, y: 200, pattern: 'sine', dir: -1 },
-        { type: 'fish', x: 600, y: 300, pattern: 'sine', dir: -1 },
+        /* Section 1 – easy tropical fish */
+        { type: 'fish', x: 500, y: 200, pattern: 'sine', dir: -1, species: 'tropical' },
+        { type: 'fish', x: 600, y: 300, pattern: 'sine', dir: -1, species: 'clownfish' },
 
-        /* Section 2 – more fish */
-        { type: 'fish', x: 820, y: 180, pattern: 'sine', dir: 1 },
-        { type: 'fish', x: 1000, y: 250, pattern: 'linear', dir: -1 },
-        { type: 'fish', x: 1200, y: 150, pattern: 'sine', dir: -1 },
+        /* Section 2 – more fish, introduce angelfish */
+        { type: 'fish', x: 820, y: 180, pattern: 'sine', dir: 1, species: 'clownfish' },
+        { type: 'fish', x: 1000, y: 250, pattern: 'linear', dir: -1, species: 'angelfish' },
+        { type: 'fish', x: 1200, y: 150, pattern: 'sine', dir: -1, species: 'tropical' },
 
-        /* Section 3 – octopus appears */
-        { type: 'fish', x: 1550, y: 280, pattern: 'sine', dir: 1 },
+        /* Section 3 – octopus + first swordfish */
+        { type: 'fish', x: 1550, y: 280, pattern: 'sine', dir: 1, species: 'angelfish' },
         { type: 'octopus', x: 1680, y: 200, pattern: 'hover' },
-        { type: 'fish', x: 1900, y: 160, pattern: 'linear', dir: -1 },
+        { type: 'fish', x: 1900, y: 160, pattern: 'linear', dir: -1, species: 'swordfish' },
         { type: 'octopus', x: 2000, y: 320, pattern: 'hover' },
 
-        /* Section 4 – gauntlet */
-        { type: 'fish', x: 2350, y: 220, pattern: 'sine', dir: -1 },
-        { type: 'fish', x: 2550, y: 200, pattern: 'linear', dir: 1 },
+        /* Section 4 – gauntlet, introduce blowfish */
+        { type: 'fish', x: 2350, y: 220, pattern: 'sine', dir: -1, species: 'blowfish' },
+        { type: 'fish', x: 2550, y: 200, pattern: 'linear', dir: 1, species: 'swordfish' },
         { type: 'octopus', x: 2750, y: 240, pattern: 'hover' },
-        { type: 'fish', x: 2950, y: 180, pattern: 'sine', dir: -1 },
-        { type: 'fish', x: 3100, y: 300, pattern: 'sine', dir: 1 },
+        { type: 'fish', x: 2950, y: 180, pattern: 'sine', dir: -1, species: 'clownfish' },
+        { type: 'fish', x: 3100, y: 300, pattern: 'sine', dir: 1, species: 'blowfish' },
         { type: 'octopus', x: 3200, y: 200, pattern: 'hover' },
 
         /* Section 5 – before boss */
-        { type: 'fish', x: 3500, y: 220, pattern: 'linear', dir: -1 },
-        { type: 'fish', x: 3650, y: 280, pattern: 'sine', dir: 1 },
-        { type: 'octopus', x: 3850, y: 200, pattern: 'hover' },
+        { type: 'fish', x: 3500, y: 220, pattern: 'linear', dir: -1, species: 'swordfish' },
+        { type: 'fish', x: 3650, y: 280, pattern: 'sine', dir: 1, species: 'angelfish' },
+        { type: 'fish', x: 3800, y: 200, pattern: 'sine', dir: -1, species: 'blowfish' },
+        { type: 'octopus', x: 3850, y: 260, pattern: 'hover' },
       ],
 
       npcs: [
-        { type: 'oliver', x: 1050, y: 160 },
-        { type: 'kittycorn', x: 2150, y: 180 },
+        { type: 'oliver', x: 700, y: 240 },
+        { type: 'kittycorn', x: 2150, y: 220 },
         { type: 'bob', x: 3200, y: 300 },
       ],
 

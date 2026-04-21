@@ -136,7 +136,7 @@
     c.fillStyle = '#88aacc';
     c.font = '14px monospace';
     c.textAlign = 'center';
-    c.fillText('~ An Underwater Adventure ~', W / 2, 140);
+    c.fillText(Game.i18n.t('titleSubtitle'), W / 2, 140);
 
     /* Buttons */
     drawButton(c, Game.i18n.t('play'), W / 2 - 90, 200, 180, 44);
@@ -144,7 +144,7 @@
     drawButton(c, Game.i18n.t('language') + ': ' + Game.i18n.t('langLabel'), W / 2 - 90, 320, 180, 44);
 
     /* Sound toggle */
-    var muteLabel = Game.audio.isMuted() ? 'Sound: OFF' : 'Sound: ON';
+    var muteLabel = Game.i18n.t(Game.audio.isMuted() ? 'soundOff' : 'soundOn');
     drawButton(c, muteLabel, W / 2 - 90, 380, 180, 36);
 
     /* Version stamp (bottom-right) – helps us know which build is running */
@@ -238,7 +238,7 @@
 
     drawButton(c, Game.i18n.t('resume'), W / 2 - 90, 200, 180, 44);
     drawButton(c, Game.i18n.t('language') + ': ' + Game.i18n.t('langLabel'), W / 2 - 90, 260, 180, 44);
-    var muteLabel = Game.audio.isMuted() ? 'Sound: OFF' : 'Sound: ON';
+    var muteLabel = Game.i18n.t(Game.audio.isMuted() ? 'soundOff' : 'soundOn');
     drawButton(c, muteLabel, W / 2 - 90, 320, 180, 44);
     drawButton(c, Game.i18n.t('quit'), W / 2 - 90, 380, 180, 44);
     c.restore();

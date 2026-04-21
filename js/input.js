@@ -42,14 +42,31 @@
     return canvas.height / dprFactor();
   }
   /* On touch devices the canvas is wider than the game viewport (control
-     strips live on each side). gameOffsetX() is the logical x-coordinate
-     where the game viewport begins. */
-  function gameOffsetX() {
-    if (!canvas) return 0;
+     strips live on each side, usually asymmetric with a wider D-pad strip
+     on the left). gameOffsetX() is the logical x-coordinate where the
+     game viewport begins. Engine.js publishes the strip widths on the
+     Game namespace; fall back to centred padding if it hasn't run yet. */
+  function hasAsymmetricStrips() {
+    return canvas &&
+           typeof Game.TOUCH_LEFT_W === 'number' &&
+           typeof Game.TOUCH_RIGHT_W === 'number' &&
+           canvasLogicalW() > GAME_W;
+  }
+  function leftStripW() {
+    if (hasAsymmetricStrips()) return Game.TOUCH_LEFT_W;
     return Math.max(0, Math.floor((canvasLogicalW() - GAME_W) / 2));
   }
+  function rightStripW() {
+    if (hasAsymmetricStrips()) return Game.TOUCH_RIGHT_W;
+    return Math.max(0, Math.floor((canvasLogicalW() - GAME_W) / 2));
+  }
+  function gameOffsetX() {
+    return leftStripW();
+  }
+  /* Back-compat helper – any caller that asks for "the strip width" really
+     wants the left one, because that's the D-pad side. */
   function sideStripW() {
-    return gameOffsetX();
+    return leftStripW();
   }
 
   /* Keyboard */
@@ -156,23 +173,25 @@
      of the game viewport so it's close at hand but out of the way. */
   function layoutButtons() {
     if (!canvas) return;
-    var stripW = sideStripW();
-    var hasSideStrips = stripW > 0;
+    var lStrip = leftStripW();
+    var rStrip = rightStripW();
+    var hasSideStrips = lStrip > 0;
     if (hasSideStrips) {
-      var leftCx = stripW / 2;
-      var rightCx = canvasLogicalW() - stripW / 2;
+      var leftCx = lStrip / 2;
+      var rightCx = canvasLogicalW() - rStrip / 2;
       var cy = GAME_H / 2;
-      /* D-pad: pad=44, spacing=52 → outer dimension 192 px fits in a
-         200-wide strip with 4 px margin on each side. */
-      var pad = 44;
-      var spacing = 52;
+      /* D-pad sized off the actual strip width so a wider strip gives
+         larger, easier-to-hit buttons on iPhone. outer dimension
+         = leftCx + spacing + pad must fit in lStrip with a small margin. */
+      var pad = Math.min(54, Math.floor(lStrip / 4.5));
+      var spacing = Math.min(66, Math.floor(lStrip / 3.8));
       touchButtons.up =    { x: leftCx, y: cy - spacing, r: pad, active: false };
       touchButtons.down =  { x: leftCx, y: cy + spacing, r: pad, active: false };
       touchButtons.left =  { x: leftCx - spacing, y: cy, r: pad, active: false };
       touchButtons.right = { x: leftCx + spacing, y: cy, r: pad, active: false };
       touchButtons.action = { x: rightCx, y: cy, r: 80, active: false };
       /* Pause: upper-right of the game viewport (canvas coords). */
-      touchButtons.pause  = { x: stripW + GAME_W - 34, y: 34, r: 28, active: false };
+      touchButtons.pause  = { x: lStrip + GAME_W - 34, y: 34, r: 28, active: false };
     } else {
       /* Keyboard-only / desktop fallback – touch buttons aren't actually
          drawn in this branch (isTouchDevice is false), but keep a layout
@@ -226,11 +245,12 @@
      so the strip background is always present under the buttons. */
   function drawTouchStrip(c, showButtons) {
     if (!canvas) return;
-    var stripW = sideStripW();
-    if (stripW > 0) {
+    var lStrip = leftStripW();
+    var rStrip = rightStripW();
+    if (lStrip > 0) {
       var lw = canvasLogicalW();
-      paintSidePanel(c, 0, stripW, /*innerEdgeX*/ stripW);
-      paintSidePanel(c, lw - stripW, stripW, /*innerEdgeX*/ lw - stripW - 1);
+      paintSidePanel(c, 0, lStrip, /*innerEdgeX*/ lStrip);
+      paintSidePanel(c, lw - rStrip, rStrip, /*innerEdgeX*/ lw - rStrip - 1);
     }
     if (showButtons) drawTouchButtons(c);
   }
