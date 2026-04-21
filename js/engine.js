@@ -4,10 +4,16 @@
   window.Game = window.Game || {};
 
   var W = 800, H = 480;
-  /* Canvas height – set to H on desktop, H + TOUCH_STRIP_H on touch devices
-     so on-screen controls render below the game viewport instead of over it. */
-  var TOUCH_STRIP_H = 200;
+  /* On touch devices we pad the canvas with a control strip on each side of
+     the 800×480 game viewport (D-pad on the left, BUBBLE on the right) so
+     the landscape-phone aspect ratio stays wide and the thumbs never cover
+     the playfield. GAME_X is the x-offset where the game viewport begins
+     inside the canvas; the render loop translates by it so game code keeps
+     using logical 0..W coordinates. */
+  var TOUCH_SIDE_W = 200;
+  var CANVAS_W = W;
   var CANVAS_H = H;
+  var GAME_X = 0;
   /* Version stamp shown on the title screen. Bump manually at release time. */
   Game.VERSION = 'v1.0.0';
   Game.BUILD = '';
@@ -494,7 +500,20 @@
 
   /* ---- Render ---- */
   function render() {
-    ctx.clearRect(0, 0, W, CANVAS_H);
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+    /* Paint side-strip backgrounds first so they sit underneath the pause
+       button (which is drawn last, in canvas space). The game viewport in
+       the middle is fully overwritten by the state renderer below, so it
+       doesn't matter that we paint across it here. */
+    if (Game.input.isTouch()) {
+      Game.input.drawTouchStrip(ctx, false);
+    }
+
+    /* Translate so all game / menu rendering keeps using logical 0..W,
+       0..H coordinates regardless of the side-strip padding. */
+    ctx.save();
+    if (GAME_X) ctx.translate(GAME_X, 0);
 
     switch (state) {
       case State.TITLE:
@@ -549,11 +568,13 @@
         break;
     }
 
-    /* Touch-control strip – painted on top of whatever the state drew
-       so the strip background is always present on touch devices. Buttons
-       only appear during active gameplay. */
-    if (Game.input.isTouch()) {
-      Game.input.drawTouchStrip(ctx, state === State.PLAYING);
+    ctx.restore();
+
+    /* Touch buttons live in canvas coordinates so they overlay both the
+       side strips and (for pause) the game viewport. Only shown during
+       active gameplay. */
+    if (Game.input.isTouch() && state === State.PLAYING) {
+      Game.input.drawTouchButtons(ctx);
     }
   }
 
@@ -1034,11 +1055,20 @@
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
-    /* On touch devices, reserve a strip beneath the 800×480 game area for
-       the D-pad / bubble / pause buttons so they don't overlap gameplay. */
+    /* On touch devices, widen the canvas with control strips on each side
+       of the 800×480 game viewport so the D-pad / BUBBLE buttons live
+       beside gameplay rather than over it, and so the canvas aspect ratio
+       matches landscape phones. */
     var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    CANVAS_H = isTouch ? (H + TOUCH_STRIP_H) : H;
-    canvas.width = W;
+    if (isTouch) {
+      CANVAS_W = W + TOUCH_SIDE_W * 2;
+      GAME_X = TOUCH_SIDE_W;
+    } else {
+      CANVAS_W = W;
+      GAME_X = 0;
+    }
+    CANVAS_H = H;
+    canvas.width = CANVAS_W;
     canvas.height = CANVAS_H;
 
     /* Enable image smoothing for smooth curves */
@@ -1064,8 +1094,8 @@
       var container = canvas.parentElement;
       var cw = container.clientWidth;
       var ch = container.clientHeight;
-      var scale = Math.min(cw / W, ch / CANVAS_H);
-      canvas.style.width = Math.floor(W * scale) + 'px';
+      var scale = Math.min(cw / CANVAS_W, ch / CANVAS_H);
+      canvas.style.width = Math.floor(CANVAS_W * scale) + 'px';
       canvas.style.height = Math.floor(CANVAS_H * scale) + 'px';
       Game.input.refreshLayout();
     }

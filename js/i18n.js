@@ -12,6 +12,7 @@
       language: 'Language',
       langLabel: 'EN',
       rotateHint: 'Please rotate your device to landscape mode!',
+      bubbleBtn: 'BUBBLE',
 
       /* ---- Intro / backstory ---- */
       introTitle: "Momoko's Tale",
@@ -105,6 +106,7 @@
       language: 'ことば',
       langLabel: 'JP',
       rotateHint: 'デバイスを よこむきにしてください！',
+      bubbleBtn: 'あわ',
 
       /* ---- イントロ / ものがたり ---- */
       introTitle: 'モモコのものがたり',

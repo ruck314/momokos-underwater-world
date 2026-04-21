@@ -23,8 +23,19 @@
   var isTouchDevice = false;
   var canvas = null;
   var canvasRect = null;
-  var GAME_H = 480;   /* logical game viewport height (unchanged) */
-  var STRIP_H = 200;  /* touch-control strip drawn below the game area */
+  var GAME_W = 800;   /* logical game viewport width */
+  var GAME_H = 480;   /* logical game viewport height */
+
+  /* Helpers: on touch devices the canvas is wider than the game view
+     (control strips live on each side). gameOffsetX() returns the canvas
+     x-coordinate where the game viewport begins. */
+  function gameOffsetX() {
+    if (!canvas) return 0;
+    return Math.max(0, Math.floor((canvas.width - GAME_W) / 2));
+  }
+  function sideStripW() {
+    return gameOffsetX();
+  }
 
   /* Keyboard */
   function onKeyDown(e) {
@@ -123,30 +134,34 @@
     }
   }
 
-  /* Layout touch buttons. When the canvas has a dedicated control strip
-     (touch devices: canvas height = GAME_H + STRIP_H) the buttons live
-     in that strip so they never overlap the gameplay area. Otherwise
-     fall back to the original in-view layout (keyboard-only builds). */
+  /* Layout touch buttons in canvas coordinates. On touch devices the
+     canvas is wider than the game viewport (side strips on each side);
+     the D-pad lives in the left strip and BUBBLE in the right strip, so
+     thumbs never cover gameplay. Pause sits in the upper-right corner
+     of the game viewport so it's close at hand but out of the way. */
   function layoutButtons() {
     if (!canvas) return;
-    var hasStrip = canvas.height >= GAME_H + 80;
-    if (hasStrip) {
-      var stripTop = GAME_H;
-      var cy = stripTop + STRIP_H / 2;
-      /* D-pad: sized to fit in the 200-tall strip with ~2px margin on
-         each side (pad=46, spacing=52 → outer edges at cy±98). */
-      var pad = 46;
+    var stripW = sideStripW();
+    var hasSideStrips = stripW > 0;
+    if (hasSideStrips) {
+      var leftCx = stripW / 2;
+      var rightCx = canvas.width - stripW / 2;
+      var cy = GAME_H / 2;
+      /* D-pad: pad=44, spacing=52 → outer dimension 192 px fits in a
+         200-wide strip with 4 px margin on each side. */
+      var pad = 44;
       var spacing = 52;
-      var bx = 130;
-      touchButtons.up =    { x: bx, y: cy - spacing, r: pad, active: false };
-      touchButtons.down =  { x: bx, y: cy + spacing, r: pad, active: false };
-      touchButtons.left =  { x: bx - spacing, y: cy, r: pad, active: false };
-      touchButtons.right = { x: bx + spacing, y: cy, r: pad, active: false };
-      touchButtons.action = { x: 680, y: cy, r: 68, active: false };
-      /* Pause lives in the upper-right of the game viewport, not the
-         control strip, so it stays out of the thumb-drag zone. */
-      touchButtons.pause  = { x: 768, y: 34, r: 26, active: false };
+      touchButtons.up =    { x: leftCx, y: cy - spacing, r: pad, active: false };
+      touchButtons.down =  { x: leftCx, y: cy + spacing, r: pad, active: false };
+      touchButtons.left =  { x: leftCx - spacing, y: cy, r: pad, active: false };
+      touchButtons.right = { x: leftCx + spacing, y: cy, r: pad, active: false };
+      touchButtons.action = { x: rightCx, y: cy, r: 80, active: false };
+      /* Pause: upper-right of the game viewport (canvas coords). */
+      touchButtons.pause  = { x: stripW + GAME_W - 34, y: 34, r: 28, active: false };
     } else {
+      /* Keyboard-only / desktop fallback – touch buttons aren't actually
+         drawn in this branch (isTouchDevice is false), but keep a layout
+         so hit-tests remain well-defined. */
       var pad2 = 38, bx2 = 100, by2 = 370, sp2 = pad2 * 2;
       touchButtons.up =    { x: bx2, y: by2 - sp2, r: pad2, active: false };
       touchButtons.down =  { x: bx2, y: by2 + sp2, r: pad2, active: false };
@@ -191,31 +206,44 @@
     if (canvas) canvasRect = canvas.getBoundingClientRect();
   }
 
-  /* Paint strip below the game viewport plus (optionally) the touch
-     buttons. Called every frame on touch devices so no state leaves
-     the strip un-painted. */
+  /* Paint the control strips on each side of the game viewport plus
+     (optionally) the touch buttons. Called every frame on touch devices
+     so the strip background is always present under the buttons. */
   function drawTouchStrip(c, showButtons) {
     if (!canvas) return;
-    var stripTop = GAME_H;
-    var stripH = canvas.height - stripTop;
-    if (stripH >= 20) {
-      c.save();
-      c.fillStyle = '#081224';
-      c.fillRect(0, stripTop, 800, stripH);
-      var grad = c.createLinearGradient(0, stripTop, 0, stripTop + 10);
-      grad.addColorStop(0, 'rgba(100,160,220,0.25)');
-      grad.addColorStop(1, 'rgba(10,22,40,0)');
-      c.fillStyle = grad;
-      c.fillRect(0, stripTop, 800, 10);
-      c.strokeStyle = '#1a3a60';
-      c.lineWidth = 2;
-      c.beginPath();
-      c.moveTo(0, stripTop + 1);
-      c.lineTo(800, stripTop + 1);
-      c.stroke();
-      c.restore();
+    var stripW = sideStripW();
+    if (stripW > 0) {
+      paintSidePanel(c, 0, stripW, /*innerEdgeX*/ stripW);
+      paintSidePanel(c, canvas.width - stripW, stripW, /*innerEdgeX*/ canvas.width - stripW - 1);
     }
     if (showButtons) drawTouchButtons(c);
+  }
+
+  function paintSidePanel(c, x, w, innerEdgeX) {
+    c.save();
+    c.fillStyle = '#081224';
+    c.fillRect(x, 0, w, canvas.height);
+    /* Subtle glow along the inner edge so the strip reads as a bezel,
+       not as a letterbox. */
+    var fromX = innerEdgeX < x + w / 2 ? innerEdgeX : innerEdgeX - 10;
+    var toX = innerEdgeX < x + w / 2 ? innerEdgeX + 10 : innerEdgeX;
+    var grad = c.createLinearGradient(fromX, 0, toX, 0);
+    if (innerEdgeX < x + w / 2) {
+      grad.addColorStop(0, 'rgba(100,160,220,0.25)');
+      grad.addColorStop(1, 'rgba(10,22,40,0)');
+    } else {
+      grad.addColorStop(0, 'rgba(10,22,40,0)');
+      grad.addColorStop(1, 'rgba(100,160,220,0.25)');
+    }
+    c.fillStyle = grad;
+    c.fillRect(Math.min(fromX, toX), 0, 10, canvas.height);
+    c.strokeStyle = '#1a3a60';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(innerEdgeX + 0.5, 0);
+    c.lineTo(innerEdgeX + 0.5, canvas.height);
+    c.stroke();
+    c.restore();
   }
 
   function drawTouchButtons(c) {
@@ -260,10 +288,11 @@
     c.lineWidth = 2;
     c.stroke();
     c.fillStyle = '#ffffff';
-    c.font = 'bold 22px monospace';
+    c.font = 'bold 24px monospace';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText('BUBBLE', ab.x, ab.y);
+    var bubbleLabel = (window.Game && Game.i18n) ? Game.i18n.t('bubbleBtn') : 'BUBBLE';
+    c.fillText(bubbleLabel, ab.x, ab.y);
 
     /* Pause button */
     var pb = touchButtons.pause;
@@ -281,7 +310,9 @@
     c.restore();
   }
 
-  /* Click handling for menus (returns canvas coords from mouse or touch) */
+  /* Click handling for menus. Returns game-space coordinates (0..GAME_W,
+     0..GAME_H) so menu hit-tests keep working regardless of whether the
+     canvas is padded with side strips. */
   function getClickPos(e) {
     var rect = canvas.getBoundingClientRect();
     var cx, cy;
@@ -292,10 +323,9 @@
       cx = e.clientX;
       cy = e.clientY;
     }
-    return {
-      x: (cx - rect.left) / (rect.width / canvas.width),
-      y: (cy - rect.top) / (rect.height / canvas.height)
-    };
+    var canvasX = (cx - rect.left) / (rect.width / canvas.width);
+    var canvasY = (cy - rect.top) / (rect.height / canvas.height);
+    return { x: canvasX - gameOffsetX(), y: canvasY };
   }
 
   window.Game.input = {
@@ -315,6 +345,7 @@
     keys: keys,
     justPressed: justPressed,
     drawTouchStrip: drawTouchStrip,
+    drawTouchButtons: drawTouchButtons,
     /* Legacy alias – calls the new strip + buttons painter. */
     drawTouchControls: function (c) { drawTouchStrip(c, true); },
     getClickPos: getClickPos,
