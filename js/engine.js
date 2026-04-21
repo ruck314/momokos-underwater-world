@@ -6,7 +6,7 @@
   var W = 800, H = 480;
   /* Canvas height – set to H on desktop, H + TOUCH_STRIP_H on touch devices
      so on-screen controls render below the game viewport instead of over it. */
-  var TOUCH_STRIP_H = 120;
+  var TOUCH_STRIP_H = 200;
   var CANVAS_H = H;
   /* Version stamp shown on the title screen. Bump manually at release time. */
   Game.VERSION = 'v1.0.0';

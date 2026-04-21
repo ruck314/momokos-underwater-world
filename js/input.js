@@ -24,7 +24,7 @@
   var canvas = null;
   var canvasRect = null;
   var GAME_H = 480;   /* logical game viewport height (unchanged) */
-  var STRIP_H = 120;  /* touch-control strip drawn below the game area */
+  var STRIP_H = 200;  /* touch-control strip drawn below the game area */
 
   /* Keyboard */
   function onKeyDown(e) {
@@ -133,17 +133,19 @@
     if (hasStrip) {
       var stripTop = GAME_H;
       var cy = stripTop + STRIP_H / 2;
-      /* Sized to fit in a 120-tall strip: up/down edges land at
-         stripTop+2 and stripBottom-2 with r=26 and spacing=32. */
-      var pad = 26;
-      var spacing = 32;
-      var bx = 110;
+      /* D-pad: sized to fit in the 200-tall strip with ~2px margin on
+         each side (pad=46, spacing=52 → outer edges at cy±98). */
+      var pad = 46;
+      var spacing = 52;
+      var bx = 130;
       touchButtons.up =    { x: bx, y: cy - spacing, r: pad, active: false };
       touchButtons.down =  { x: bx, y: cy + spacing, r: pad, active: false };
       touchButtons.left =  { x: bx - spacing, y: cy, r: pad, active: false };
       touchButtons.right = { x: bx + spacing, y: cy, r: pad, active: false };
-      touchButtons.action = { x: 720, y: cy, r: 38, active: false };
-      touchButtons.pause  = { x: 770, y: stripTop + 28, r: 22, active: false };
+      touchButtons.action = { x: 680, y: cy, r: 68, active: false };
+      /* Pause lives in the upper-right of the game viewport, not the
+         control strip, so it stays out of the thumb-drag zone. */
+      touchButtons.pause  = { x: 768, y: 34, r: 26, active: false };
     } else {
       var pad2 = 38, bx2 = 100, by2 = 370, sp2 = pad2 * 2;
       touchButtons.up =    { x: bx2, y: by2 - sp2, r: pad2, active: false };
@@ -234,7 +236,7 @@
       c.lineWidth = 2;
       c.stroke();
       c.fillStyle = '#ffffff';
-      c.font = 'bold 24px monospace';
+      c.font = 'bold 34px monospace';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(arrows[i], b.x, b.y);
@@ -245,7 +247,7 @@
     var centerY = (touchButtons.up.y + touchButtons.down.y) / 2;
     c.fillStyle = '#334455';
     c.beginPath();
-    c.arc(centerX, centerY, 14, 0, Math.PI * 2);
+    c.arc(centerX, centerY, 22, 0, Math.PI * 2);
     c.fill();
 
     /* Action button */
@@ -258,7 +260,7 @@
     c.lineWidth = 2;
     c.stroke();
     c.fillStyle = '#ffffff';
-    c.font = 'bold 16px monospace';
+    c.font = 'bold 22px monospace';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText('BUBBLE', ab.x, ab.y);
@@ -273,7 +275,7 @@
     c.lineWidth = 2;
     c.stroke();
     c.fillStyle = '#ffffff';
-    c.font = 'bold 14px monospace';
+    c.font = 'bold 20px monospace';
     c.fillText('II', pb.x, pb.y);
 
     c.restore();
