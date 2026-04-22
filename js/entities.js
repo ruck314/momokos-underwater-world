@@ -156,208 +156,191 @@
 
   /* Shared Momoko sprite painter – called by gameplay draw and the
      customize-screen preview so both stay visually in sync.
-     Design: Peach-Princess swimmer:
-       – flowing peach-pink hair
-       – peach-themed swim headband with a peach-fruit charm
-       – goggles pushed up on the forehead (just the strap shows)
-       – one-piece swimsuit with a frilly peach trim
-       – flippers on the feet. */
+     Design (inspired by Momoko's own drawing):
+       – oversized round head with huge expressive eyes
+       – long flowing hair that hangs past the shoulders in floppy
+         rounded pigtail shapes that flip outward at the ends
+       – simple short-sleeve t-shirt and long pants
+       – tiny fin-like slip-on shoes so she still reads as a swimmer. */
   function drawMomokoSprite(c, sx, sy, cust, frame) {
     var hairC = (cust && cust.hair) || '#e06088';
-    var suitC = (cust && cust.suit) || '#3366aa';
+    var shirtC = (cust && cust.suit) || '#3366aa';
     var skinC = (cust && cust.skin) || '#ffddbb';
-    var flipC = (cust && cust.flipper) || '#33bb77';
+    var shoeC = (cust && cust.flipper) || '#33bb77';
     var f = frame || 0;
-    var kick = Math.sin(f * 1.5) * 3;
+    var kick = Math.sin(f * 1.5) * 2;
 
-    /* Back hair – flowing, drawn first so everything overlays it */
-    c.fillStyle = hairC;
+    /* Derive a darker hair accent so shadow on the back hair still reads
+       no matter what hair colour the player picks. */
+    function shade(hex, amt) {
+      var n = parseInt(hex.slice(1), 16);
+      var r = Math.max(0, ((n >> 16) & 255) - amt);
+      var g = Math.max(0, ((n >> 8) & 255) - amt);
+      var b = Math.max(0, (n & 255) - amt);
+      return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+    var hairShade = shade(hairC, 40);
+
+    /* Pants (drawn early so the shirt/arms overlap cleanly) */
+    c.fillStyle = '#3a2a18';
+    c.fillRect(sx + 9, sy + 25, 4, 7);
+    c.fillRect(sx + 15, sy + 25, 4, 7);
+
+    /* Shoes – small rounded slip-ons */
+    c.fillStyle = shoeC;
     c.beginPath();
-    c.moveTo(sx + 4, sy + 8);
-    c.bezierCurveTo(sx + 2, sy + 18, sx + 3, sy + 26, sx + 7, sy + 30);
-    c.lineTo(sx + 21, sy + 30);
-    c.bezierCurveTo(sx + 25, sy + 26, sx + 26, sy + 18, sx + 24, sy + 8);
+    c.ellipse(sx + 11, sy + 33 + kick * 0.3, 3, 1.6, 0, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(sx + 17, sy + 33 - kick * 0.3, 3, 1.6, 0, 0, Math.PI * 2);
+    c.fill();
+
+    /* Back hair mass – wide and flowing, sits behind the head */
+    c.fillStyle = hairShade;
+    c.beginPath();
+    c.moveTo(sx + 3, sy + 9);
+    c.bezierCurveTo(sx - 1, sy + 20, sx + 1, sy + 27, sx + 5, sy + 30);
+    c.lineTo(sx + 23, sy + 30);
+    c.bezierCurveTo(sx + 27, sy + 27, sx + 29, sy + 20, sx + 25, sy + 9);
     c.closePath();
     c.fill();
 
-    /* Top of hair / crown */
+    /* Long flowing pigtails with floppy rounded tips (the signature
+       shape in the reference drawing). */
+    c.fillStyle = hairC;
+    /* Left pigtail */
     c.beginPath();
-    c.ellipse(sx + 14, sy + 6, 11, 6, 0, Math.PI, 0);
+    c.moveTo(sx + 3, sy + 10);
+    c.bezierCurveTo(sx - 3, sy + 18, sx - 2, sy + 26, sx + 1, sy + 30);
+    c.bezierCurveTo(sx - 2, sy + 28, sx - 4, sy + 24, sx - 1, sy + 20);
+    c.bezierCurveTo(sx + 1, sy + 16, sx + 2, sy + 12, sx + 5, sy + 11);
+    c.closePath();
+    c.fill();
+    /* Right pigtail */
+    c.beginPath();
+    c.moveTo(sx + 25, sy + 10);
+    c.bezierCurveTo(sx + 31, sy + 18, sx + 30, sy + 26, sx + 27, sy + 30);
+    c.bezierCurveTo(sx + 30, sy + 28, sx + 32, sy + 24, sx + 29, sy + 20);
+    c.bezierCurveTo(sx + 27, sy + 16, sx + 26, sy + 12, sx + 23, sy + 11);
+    c.closePath();
     c.fill();
 
-    /* Swim headband – thin peach band wrapping the crown */
-    c.fillStyle = '#ff9bb6';
-    c.fillRect(sx + 3, sy + 5, 22, 2);
-    c.fillStyle = '#ffd0dd';
-    c.fillRect(sx + 3, sy + 5, 22, 0.7);
-
-    /* Goggles strap – darker contrasting band just below the headband,
-       the lenses sit on the forehead so we just see the side anchors. */
-    c.fillStyle = '#2a3a4a';
-    c.fillRect(sx + 3, sy + 8, 22, 1.4);
-    /* Goggle eye-cups perched up on the forehead */
-    c.fillStyle = '#e7f4ff';
+    /* Top of hair / crown – rounded dome */
+    c.fillStyle = hairC;
     c.beginPath();
-    c.ellipse(sx + 10, sy + 8, 2.2, 1.6, 0, 0, Math.PI * 2);
-    c.fill();
-    c.beginPath();
-    c.ellipse(sx + 18, sy + 8, 2.2, 1.6, 0, 0, Math.PI * 2);
-    c.fill();
-    c.strokeStyle = '#2a3a4a';
-    c.lineWidth = 0.6;
-    c.beginPath(); c.ellipse(sx + 10, sy + 8, 2.2, 1.6, 0, 0, Math.PI * 2); c.stroke();
-    c.beginPath(); c.ellipse(sx + 18, sy + 8, 2.2, 1.6, 0, 0, Math.PI * 2); c.stroke();
-
-    /* Peach charm sitting on top of the headband */
-    c.fillStyle = '#ffc3d0';
-    c.beginPath();
-    c.arc(sx + 14, sy + 3, 3.2, 0, Math.PI * 2);
-    c.fill();
-    c.strokeStyle = '#e88aa0';
-    c.lineWidth = 0.6;
-    c.beginPath();
-    c.moveTo(sx + 14, sy + 0.3);
-    c.lineTo(sx + 14, sy + 5.6);
-    c.stroke();
-    c.fillStyle = '#2fa84c';
-    c.beginPath();
-    c.ellipse(sx + 16.2, sy + 0.8, 2.2, 1.1, 0.6, 0, Math.PI * 2);
+    c.ellipse(sx + 14, sy + 6, 12, 7, 0, Math.PI, 0);
     c.fill();
 
-    /* Face */
+    /* Face – large round head */
     c.fillStyle = skinC;
     c.beginPath();
-    c.ellipse(sx + 14, sy + 12, 7, 6, 0, 0, Math.PI * 2);
+    c.ellipse(sx + 14, sy + 12, 8, 7.5, 0, 0, Math.PI * 2);
     c.fill();
 
-    /* Front bangs */
+    /* Front bangs – sweep across the forehead */
     c.fillStyle = hairC;
     c.beginPath();
-    c.moveTo(sx + 7, sy + 8);
-    c.quadraticCurveTo(sx + 10, sy + 11, sx + 13, sy + 9.5);
-    c.lineTo(sx + 13, sy + 8);
+    c.moveTo(sx + 6, sy + 7);
+    c.quadraticCurveTo(sx + 10, sy + 12, sx + 14, sy + 10);
+    c.quadraticCurveTo(sx + 18, sy + 12, sx + 22, sy + 7);
+    c.quadraticCurveTo(sx + 21, sy + 4, sx + 14, sy + 3);
+    c.quadraticCurveTo(sx + 7, sy + 4, sx + 6, sy + 7);
     c.closePath();
-    c.fill();
-    c.beginPath();
-    c.moveTo(sx + 21, sy + 8);
-    c.quadraticCurveTo(sx + 18, sy + 11, sx + 15, sy + 9.5);
-    c.lineTo(sx + 15, sy + 8);
-    c.closePath();
-    c.fill();
-    /* Side locks */
-    c.beginPath();
-    c.ellipse(sx + 6, sy + 13, 1.8, 4.5, 0.1, 0, Math.PI * 2);
-    c.fill();
-    c.beginPath();
-    c.ellipse(sx + 22, sy + 13, 1.8, 4.5, -0.1, 0, Math.PI * 2);
     c.fill();
 
-    /* Eyes – anime circles with highlights */
-    c.fillStyle = '#3a2416';
-    c.beginPath(); c.arc(sx + 10.5, sy + 12.5, 2, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(sx + 17.5, sy + 12.5, 2, 0, Math.PI * 2); c.fill();
+    /* Side locks framing the cheeks */
+    c.beginPath();
+    c.ellipse(sx + 6, sy + 14, 2.2, 5, 0.15, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(sx + 22, sy + 14, 2.2, 5, -0.15, 0, Math.PI * 2);
+    c.fill();
+
+    /* Big expressive eyes – outline, iris, pupil, and multiple
+       highlights for that shojo-manga sparkle. */
     c.fillStyle = '#ffffff';
-    c.beginPath(); c.arc(sx + 11, sy + 12, 0.7, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(sx + 18, sy + 12, 0.7, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 10.5, sy + 12.5, 2.6, 3.2, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 17.5, sy + 12.5, 2.6, 3.2, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#2a1a12';
+    c.beginPath(); c.ellipse(sx + 10.5, sy + 13, 2.1, 2.7, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 17.5, sy + 13, 2.1, 2.7, 0, 0, Math.PI * 2); c.fill();
+    /* Inner iris glow */
+    c.fillStyle = '#5a3a28';
+    c.beginPath(); c.arc(sx + 10.5, sy + 13.5, 1.3, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 17.5, sy + 13.5, 1.3, 0, Math.PI * 2); c.fill();
+    /* Main highlight */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(sx + 11.2, sy + 12, 0.9, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 18.2, sy + 12, 0.9, 0, Math.PI * 2); c.fill();
+    /* Secondary tiny highlight */
+    c.beginPath(); c.arc(sx + 9.8, sy + 13.8, 0.4, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 16.8, sy + 13.8, 0.4, 0, Math.PI * 2); c.fill();
+
+    /* Eyelashes – thin upper lid */
+    c.strokeStyle = '#2a1a12';
+    c.lineWidth = 0.7;
+    c.beginPath();
+    c.moveTo(sx + 8.3, sy + 11);
+    c.quadraticCurveTo(sx + 10.5, sy + 10, sx + 12.7, sy + 11);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(sx + 15.3, sy + 11);
+    c.quadraticCurveTo(sx + 17.5, sy + 10, sx + 19.7, sy + 11);
+    c.stroke();
 
     /* Blush */
-    c.fillStyle = 'rgba(255,170,195,0.55)';
-    c.beginPath(); c.arc(sx + 8.5, sy + 14.5, 1.5, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(sx + 19.5, sy + 14.5, 1.5, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(255,170,195,0.6)';
+    c.beginPath(); c.arc(sx + 8, sy + 15.5, 1.6, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 20, sy + 15.5, 1.6, 0, Math.PI * 2); c.fill();
 
-    /* Smile */
-    c.fillStyle = '#cc5d6e';
+    /* Small happy mouth */
+    c.strokeStyle = '#b24a5a';
+    c.lineWidth = 0.9;
+    c.lineCap = 'round';
     c.beginPath();
-    c.arc(sx + 14, sy + 16, 1.8, 0, Math.PI);
-    c.fill();
+    c.arc(sx + 14, sy + 16.8, 1.3, 0.2, Math.PI - 0.2);
+    c.stroke();
 
     /* Neck */
     c.fillStyle = skinC;
-    c.fillRect(sx + 12, sy + 17, 4, 2);
+    c.fillRect(sx + 12, sy + 18.5, 4, 1.5);
 
-    /* Swimsuit – one-piece tank cut with halter straps */
-    /* Straps over the shoulders */
-    c.strokeStyle = suitC;
-    c.lineWidth = 1.6;
-    c.lineCap = 'round';
-    c.beginPath();
-    c.moveTo(sx + 10, sy + 18);
-    c.lineTo(sx + 9, sy + 21);
-    c.stroke();
-    c.beginPath();
-    c.moveTo(sx + 18, sy + 18);
-    c.lineTo(sx + 19, sy + 21);
-    c.stroke();
-    /* Suit body – fitted with a sweetheart neckline */
-    c.fillStyle = suitC;
+    /* Short-sleeve t-shirt */
+    c.fillStyle = shirtC;
     c.beginPath();
     c.moveTo(sx + 7, sy + 21);
-    c.quadraticCurveTo(sx + 10, sy + 19.5, sx + 14, sy + 21);
+    c.quadraticCurveTo(sx + 10, sy + 19.5, sx + 14, sy + 20.2);
     c.quadraticCurveTo(sx + 18, sy + 19.5, sx + 21, sy + 21);
-    c.lineTo(sx + 22, sy + 28);
-    c.quadraticCurveTo(sx + 14, sy + 31, sx + 6, sy + 28);
+    c.lineTo(sx + 21, sy + 26);
+    c.lineTo(sx + 7, sy + 26);
     c.closePath();
     c.fill();
-    /* Suit highlight – subtle lighter band along the chest */
-    c.fillStyle = 'rgba(255,255,255,0.18)';
+    /* Shirt collar hint */
+    c.fillStyle = 'rgba(255,255,255,0.2)';
     c.beginPath();
-    c.moveTo(sx + 8, sy + 22);
-    c.quadraticCurveTo(sx + 14, sy + 23.5, sx + 20, sy + 22);
-    c.lineTo(sx + 20, sy + 23.5);
-    c.quadraticCurveTo(sx + 14, sy + 25, sx + 8, sy + 23.5);
+    c.moveTo(sx + 12, sy + 20);
+    c.quadraticCurveTo(sx + 14, sy + 21.5, sx + 16, sy + 20);
+    c.lineTo(sx + 16, sy + 20.5);
+    c.quadraticCurveTo(sx + 14, sy + 22, sx + 12, sy + 20.5);
     c.closePath();
-    c.fill();
-    /* Frilly peach trim along the waistline */
-    c.fillStyle = '#ff9bb6';
-    for (var fr = 0; fr < 5; fr++) {
-      var fxc = sx + 8 + fr * 3;
-      c.beginPath();
-      c.arc(fxc, sy + 28.5, 1.6, 0, Math.PI);
-      c.fill();
-    }
-    /* Tiny peach motif centered on the chest */
-    c.fillStyle = '#ffc3d0';
-    c.beginPath();
-    c.arc(sx + 14, sy + 24.5, 1.4, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = '#2fa84c';
-    c.beginPath();
-    c.ellipse(sx + 15, sy + 23.5, 0.9, 0.45, 0.6, 0, Math.PI * 2);
     c.fill();
 
-    /* Bubble gun arm */
+    /* Arms – skin-tone from sleeves down to hands. Right arm holds the
+       bubble gun. */
     c.fillStyle = skinC;
+    /* Left arm */
     c.beginPath();
-    c.ellipse(sx + 24.5, sy + 23, 2.8, 2.3, 0, 0, Math.PI * 2);
+    c.ellipse(sx + 5.5, sy + 24, 1.7, 2.8, 0.1, 0, Math.PI * 2);
     c.fill();
+    /* Right arm extended */
+    c.beginPath();
+    c.ellipse(sx + 23, sy + 23, 2.3, 1.9, -0.2, 0, Math.PI * 2);
+    c.fill();
+    /* Bubble-gun grip */
     c.fillStyle = '#ff8833';
     c.beginPath();
-    c.moveTo(sx + 27, sy + 22);
-    c.quadraticCurveTo(sx + 31, sy + 23, sx + 27, sy + 24.5);
-    c.closePath();
-    c.fill();
-
-    /* Legs – short, skin-colored */
-    c.fillStyle = skinC;
-    c.beginPath();
-    c.ellipse(sx + 10, sy + 30 + kick * 0.3, 2.4, 2, 0, 0, Math.PI * 2);
-    c.fill();
-    c.beginPath();
-    c.ellipse(sx + 18, sy + 30 - kick * 0.3, 2.4, 2, 0, 0, Math.PI * 2);
-    c.fill();
-
-    /* Flippers – bezier fin shapes */
-    c.fillStyle = flipC;
-    c.beginPath();
-    c.moveTo(sx + 5, sy + 32 + kick);
-    c.quadraticCurveTo(sx + 9, sy + 36 + kick, sx + 14, sy + 33 + kick);
-    c.lineTo(sx + 14, sy + 31 + kick);
-    c.closePath();
-    c.fill();
-    c.beginPath();
-    c.moveTo(sx + 14, sy + 32 - kick);
-    c.quadraticCurveTo(sx + 18, sy + 36 - kick, sx + 23, sy + 33 - kick);
-    c.lineTo(sx + 23, sy + 31 - kick);
+    c.moveTo(sx + 26, sy + 21.5);
+    c.quadraticCurveTo(sx + 30, sy + 23, sx + 26, sy + 24.5);
     c.closePath();
     c.fill();
   }
@@ -379,6 +362,170 @@
     drawMomokoSprite(c, sx, sy, cust, this.animFrame);
     c.restore();
   };
+
+  /* Floss-dance Momoko – arms swing rigid across the body while the hips
+     tilt the opposite direction on each beat. Phase is in radians so the
+     caller can drive it off a timer. Drawn at the same 28×34 footprint
+     so it drops into the existing sprite slot. */
+  function drawMomokoFloss(c, sx, sy, cust, phase) {
+    var hairC = (cust && cust.hair) || '#e06088';
+    var shirtC = (cust && cust.suit) || '#3366aa';
+    var skinC = (cust && cust.skin) || '#ffddbb';
+    var shoeC = (cust && cust.flipper) || '#33bb77';
+    /* Square wave: arms and hips flip sides on each beat for a crisp,
+       snappy floss rather than a smooth sway. */
+    var beat = Math.sin(phase) > 0 ? 1 : -1;
+    /* Small ease for a little motion between beats */
+    var ease = Math.sin(phase * 2) * 0.3;
+    var hipShift = beat * 2;
+    var bodyTilt = beat * 0.08;
+
+    c.save();
+    c.translate(sx + 14, sy + 22);
+    c.rotate(bodyTilt);
+    c.translate(-14, -22);
+
+    /* Pants – shifted by hip motion */
+    c.fillStyle = '#3a2a18';
+    c.fillRect(9 + hipShift, 25, 4, 7);
+    c.fillRect(15 + hipShift, 25, 4, 7);
+
+    /* Shoes */
+    c.fillStyle = shoeC;
+    c.beginPath();
+    c.ellipse(11 + hipShift, 33, 3, 1.6, 0, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(17 + hipShift, 33, 3, 1.6, 0, 0, Math.PI * 2);
+    c.fill();
+
+    /* Back hair – swings opposite to hips for floss feel */
+    function darken(hex, amt) {
+      var n = parseInt(hex.slice(1), 16);
+      var r = Math.max(0, ((n >> 16) & 255) - amt);
+      var g = Math.max(0, ((n >> 8) & 255) - amt);
+      var b = Math.max(0, (n & 255) - amt);
+      return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+    c.fillStyle = darken(hairC, 40);
+    c.beginPath();
+    c.moveTo(3 - beat, 9);
+    c.bezierCurveTo(-1 - beat, 20, 1 - beat, 27, 5 - beat, 30);
+    c.lineTo(23 - beat, 30);
+    c.bezierCurveTo(27 - beat, 27, 29 - beat, 20, 25 - beat, 9);
+    c.closePath();
+    c.fill();
+
+    /* Pigtails swinging */
+    c.fillStyle = hairC;
+    c.beginPath();
+    c.moveTo(3 - beat, 10);
+    c.bezierCurveTo(-3 - beat * 2, 18, -2 - beat * 2, 26, 1 - beat * 2, 30);
+    c.bezierCurveTo(-2 - beat * 2, 28, -4 - beat * 2, 24, -1 - beat * 2, 20);
+    c.bezierCurveTo(1 - beat, 16, 2 - beat, 12, 5 - beat, 11);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.moveTo(25 - beat, 10);
+    c.bezierCurveTo(31 - beat * 2, 18, 30 - beat * 2, 26, 27 - beat * 2, 30);
+    c.bezierCurveTo(30 - beat * 2, 28, 32 - beat * 2, 24, 29 - beat * 2, 20);
+    c.bezierCurveTo(27 - beat, 16, 26 - beat, 12, 23 - beat, 11);
+    c.closePath();
+    c.fill();
+
+    /* Crown / bangs */
+    c.fillStyle = hairC;
+    c.beginPath();
+    c.ellipse(14, 6, 12, 7, 0, Math.PI, 0);
+    c.fill();
+
+    /* Face */
+    c.fillStyle = skinC;
+    c.beginPath();
+    c.ellipse(14, 12, 8, 7.5, 0, 0, Math.PI * 2);
+    c.fill();
+
+    /* Front bangs */
+    c.fillStyle = hairC;
+    c.beginPath();
+    c.moveTo(6, 7);
+    c.quadraticCurveTo(10, 12, 14, 10);
+    c.quadraticCurveTo(18, 12, 22, 7);
+    c.quadraticCurveTo(21, 4, 14, 3);
+    c.quadraticCurveTo(7, 4, 6, 7);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.ellipse(6, 14, 2.2, 5, 0.15, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(22, 14, 2.2, 5, -0.15, 0, Math.PI * 2);
+    c.fill();
+
+    /* Eyes – closed & happy (floss joy!) */
+    c.strokeStyle = '#2a1a12';
+    c.lineWidth = 1;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.arc(10.5, 13, 1.8, Math.PI + 0.2, -0.2, false);
+    c.stroke();
+    c.beginPath();
+    c.arc(17.5, 13, 1.8, Math.PI + 0.2, -0.2, false);
+    c.stroke();
+
+    /* Blush */
+    c.fillStyle = 'rgba(255,170,195,0.65)';
+    c.beginPath(); c.arc(8, 15.5, 1.6, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(20, 15.5, 1.6, 0, Math.PI * 2); c.fill();
+
+    /* Big grinning mouth */
+    c.fillStyle = '#b24a5a';
+    c.beginPath();
+    c.arc(14, 16.5, 2, 0, Math.PI);
+    c.fill();
+    c.fillStyle = '#ffffff';
+    c.fillRect(12.5, 16.4, 3, 0.9);
+
+    /* Neck */
+    c.fillStyle = skinC;
+    c.fillRect(12, 18.5, 4, 1.5);
+
+    /* Shirt */
+    c.fillStyle = shirtC;
+    c.beginPath();
+    c.moveTo(7, 21);
+    c.quadraticCurveTo(10, 19.5, 14, 20.2);
+    c.quadraticCurveTo(18, 19.5, 21, 21);
+    c.lineTo(21, 26);
+    c.lineTo(7, 26);
+    c.closePath();
+    c.fill();
+
+    /* Floss arms: both swing to the same side (the hallmark of the move).
+       When beat=+1, both arms cross to the right side of the body; when
+       beat=-1, to the left. Arms drawn as stubby stick-figure segments
+       with skin-tone hands. */
+    c.strokeStyle = skinC;
+    c.lineWidth = 3;
+    c.lineCap = 'round';
+    var armDir = -beat; /* opposite to hips */
+    /* Top arm – goes across the front of the body */
+    c.beginPath();
+    c.moveTo(14 - armDir * 4, 22);
+    c.lineTo(14 + armDir * 9, 21 + ease);
+    c.stroke();
+    /* Bottom arm – goes across behind the body (lower) */
+    c.beginPath();
+    c.moveTo(14 + armDir * 4, 23);
+    c.lineTo(14 - armDir * 9, 26 - ease);
+    c.stroke();
+    /* Hands */
+    c.fillStyle = skinC;
+    c.beginPath(); c.arc(14 + armDir * 10, 21 + ease, 1.8, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(14 - armDir * 10, 26 - ease, 1.8, 0, Math.PI * 2); c.fill();
+
+    c.restore();
+  }
 
   /* ========== BUBBLE (Projectile) ========== */
   function Bubble(x, y, dir) {
@@ -1852,5 +1999,6 @@
     AmbientBubble: AmbientBubble,
     spawnBurst: spawnBurst,
     drawMomokoSprite: drawMomokoSprite,
+    drawMomokoFloss: drawMomokoFloss,
   };
 })();

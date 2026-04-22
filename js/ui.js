@@ -227,20 +227,33 @@
   }
 
   /* ---- Pause Menu ---- */
+  var pauseFlossTimer = 0;
   function drawPauseMenu(c) {
+    pauseFlossTimer++;
     c.save();
     c.fillStyle = 'rgba(0,0,0,0.7)';
     c.fillRect(0, 0, W, H);
     c.fillStyle = '#66ccff';
     c.font = 'bold 32px monospace';
     c.textAlign = 'center';
-    c.fillText(Game.i18n.t('paused'), W / 2, 150);
+    c.fillText(Game.i18n.t('paused'), W / 2, 90);
 
-    drawButton(c, Game.i18n.t('resume'), W / 2 - 90, 200, 180, 44);
-    drawButton(c, Game.i18n.t('language') + ': ' + Game.i18n.t('langLabel'), W / 2 - 90, 260, 180, 44);
+    /* Floss-dance Momoko – beat tied to a ~1.8Hz square wave so the
+       arms snap on the beat like the real dance. Placed to the left of
+       the menu buttons so she's visible but not competing for space. */
+    if (Game.entities && Game.entities.drawMomokoFloss) {
+      c.save();
+      c.translate(170, 220);
+      c.scale(3.5, 3.5);
+      Game.entities.drawMomokoFloss(c, 0, 0, Game.customization, pauseFlossTimer * 0.18);
+      c.restore();
+    }
+
+    drawButton(c, Game.i18n.t('resume'), W / 2 - 10, 170, 220, 44);
+    drawButton(c, Game.i18n.t('language') + ': ' + Game.i18n.t('langLabel'), W / 2 - 10, 230, 220, 44);
     var muteLabel = Game.i18n.t(Game.audio.isMuted() ? 'soundOff' : 'soundOn');
-    drawButton(c, muteLabel, W / 2 - 90, 320, 180, 44);
-    drawButton(c, Game.i18n.t('quit'), W / 2 - 90, 380, 180, 44);
+    drawButton(c, muteLabel, W / 2 - 10, 290, 220, 44);
+    drawButton(c, Game.i18n.t('quit'), W / 2 - 10, 350, 220, 44);
 
     /* Version stamp – matches the title-screen stamp so we can tell at a
        glance which build is paused (handy for bug reports). */
@@ -256,38 +269,140 @@
   }
 
   function handlePauseClick(mx, my) {
-    if (hitButton(mx, my, W / 2 - 90, 200, 180, 44)) { Game.audio.play('select'); return 'resume'; }
-    if (hitButton(mx, my, W / 2 - 90, 260, 180, 44)) { Game.audio.play('select'); Game.i18n.toggleLanguage(); return null; }
-    if (hitButton(mx, my, W / 2 - 90, 320, 180, 44)) { Game.audio.toggleMute(); return null; }
-    if (hitButton(mx, my, W / 2 - 90, 380, 180, 44)) { Game.audio.play('select'); return 'quit'; }
+    if (hitButton(mx, my, W / 2 - 10, 170, 220, 44)) { Game.audio.play('select'); return 'resume'; }
+    if (hitButton(mx, my, W / 2 - 10, 230, 220, 44)) { Game.audio.play('select'); Game.i18n.toggleLanguage(); return null; }
+    if (hitButton(mx, my, W / 2 - 10, 290, 220, 44)) { Game.audio.toggleMute(); return null; }
+    if (hitButton(mx, my, W / 2 - 10, 350, 220, 44)) { Game.audio.play('select'); return 'quit'; }
     return null;
   }
 
-  /* ---- Dialogue Box ---- */
-  function drawDialogue(c, speaker, text) {
-    var boxW = 500;
-    var boxH = 100;
-    var bx = (W - boxW) / 2;
-    var by = H - boxH - 60;
+  /* ---- QR code ----
+     Pre-computed Version-4 QR matrix (33×33 modules, error-correction
+     level M) encoding the game's public URL. Generated offline; see the
+     commit notes. Rendered in canvas-space so it sits in the empty
+     upper-right strip area, inviting someone else to scan and play. */
+  var QR_URL = 'https://ruck314.github.io/momokos-underwater-world/';
+  var QR_SIZE = 33;
+  var QR_ROWS = [
+    '111111100010000010111011101111111',
+    '100000100101100110101110001000001',
+    '101110101111101110001111101011101',
+    '101110101111000000100010101011101',
+    '101110101111011110001111101011101',
+    '100000101000111001110100101000001',
+    '111111101010101010101010101111111',
+    '000000001000101010111111100000000',
+    '101111100011011001111000001111100',
+    '110010001110010011111111101101101',
+    '011010101000011111000010000010100',
+    '101110001011010011100111101011111',
+    '110101100010001010010011010011000',
+    '010101011111000101100101011001011',
+    '110100100001101111001110011001110',
+    '011000010010101100111100011001100',
+    '001101110101101101010000110111001',
+    '111100011111110010111001011101111',
+    '101001101011101110100010010110110',
+    '101001001110111110001111111111111',
+    '010110111011100000100010110111011',
+    '110000000111011111010011001001101',
+    '100011101101101000100010100101110',
+    '101101010011110010001100001001111',
+    '100001111010111001001010111110000',
+    '000000001010010011111100100010101',
+    '111111100001101111001001101010110',
+    '100000101111100011100101100011111',
+    '101110101101011010010010111111001',
+    '101110101001010101111101110011011',
+    '101110101011101111000011111100000',
+    '100000100101001100001111000011100',
+    '111111101100110101110011110100010',
+  ];
+
+  /* Paints the QR code centered in the rect (cx, cy, size) with a white
+     quiet zone so scanners don't choke on adjacent canvas colour. */
+  function drawQRCode(c, cx, cy, size) {
+    var quiet = 4; /* modules of white padding around the code */
+    var totalModules = QR_SIZE + quiet * 2;
+    var cell = Math.floor(size / totalModules);
+    if (cell < 1) cell = 1;
+    var rendered = cell * totalModules;
+    var x0 = Math.round(cx - rendered / 2);
+    var y0 = Math.round(cy - rendered / 2);
+    c.save();
+    /* White background (includes quiet zone) */
+    c.fillStyle = '#ffffff';
+    c.fillRect(x0, y0, rendered, rendered);
+    c.fillStyle = '#000000';
+    for (var r = 0; r < QR_SIZE; r++) {
+      var row = QR_ROWS[r];
+      for (var q = 0; q < QR_SIZE; q++) {
+        if (row.charAt(q) === '1') {
+          c.fillRect(
+            x0 + (q + quiet) * cell,
+            y0 + (r + quiet) * cell,
+            cell, cell
+          );
+        }
+      }
+    }
+    /* "SCAN" caption below */
+    c.fillStyle = '#cfe6ff';
+    c.font = 'bold 10px monospace';
+    c.textAlign = 'center';
+    c.textBaseline = 'alphabetic';
+    c.fillText('SCAN TO PLAY', cx, y0 + rendered + 14);
+    c.restore();
+  }
+
+  /* ---- Dialogue Box ----
+     Drawn in canvas-space (NOT game-space) so it lives in the bottom
+     bezel area on touch devices and doesn't obscure gameplay. Caller
+     supplies the canvas dimensions and where the game viewport sits
+     inside them; the box floats below the viewport if there's bezel
+     room, otherwise it hugs the bottom of the gameplay area with
+     reduced height. */
+  function drawDialogue(c, speaker, text, cw, ch, gx, gy) {
+    /* Back-compat: if canvas dims aren't supplied, fall back to
+       in-viewport rendering at the bottom of the gameplay area. */
+    if (cw == null) { cw = W; ch = H; gx = 0; gy = 0; }
+    var gameBottom = gy + H;
+    var bezelBelow = Math.max(0, ch - gameBottom);
+    var boxH, boxY;
+    if (bezelBelow >= 56) {
+      /* Sits fully in the bottom bezel */
+      boxH = Math.min(bezelBelow - 8, 90);
+      boxY = gameBottom + Math.max(4, (bezelBelow - boxH) / 2);
+    } else if (bezelBelow > 0) {
+      /* Overflow into the bezel plus a small fade over the game edge */
+      boxH = Math.min(56 + bezelBelow, 80);
+      boxY = ch - boxH - 4;
+    } else {
+      /* No bezel — tuck against the very bottom of gameplay with a
+         shorter box so less of the screen is covered. */
+      boxH = 56;
+      boxY = gameBottom - boxH - 4;
+    }
+    var boxW = Math.min(560, cw - 40);
+    var boxX = (cw - boxW) / 2;
 
     c.save();
-    /* Box */
-    c.fillStyle = 'rgba(0, 15, 40, 0.9)';
-    c.fillRect(bx, by, boxW, boxH);
+    c.fillStyle = 'rgba(0, 15, 40, 0.92)';
+    c.fillRect(boxX, boxY, boxW, boxH);
     c.strokeStyle = '#44aadd';
     c.lineWidth = 2;
-    c.strokeRect(bx, by, boxW, boxH);
+    c.strokeRect(boxX, boxY, boxW, boxH);
 
     /* Speaker name */
     c.fillStyle = '#ffcc44';
     c.font = 'bold 14px monospace';
     c.textAlign = 'left';
-    c.fillText(speaker, bx + 12, by + 18);
+    c.fillText(speaker, boxX + 12, boxY + 18);
 
     /* Text */
     c.fillStyle = '#ddeeff';
     c.font = '13px monospace';
-    wrapText(c, text, bx + 12, by + 38, boxW - 24, 18);
+    wrapText(c, text, boxX + 12, boxY + 36, boxW - 24, 17);
 
     c.restore();
   }
@@ -1431,6 +1546,7 @@
     drawHUD: drawHUD,
     drawPauseMenu: drawPauseMenu,
     drawDialogue: drawDialogue,
+    drawQRCode: drawQRCode,
     drawGameOver: drawGameOver,
     drawVictory: drawVictory,
     drawCustomizeScreen: drawCustomizeScreen,

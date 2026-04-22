@@ -186,12 +186,45 @@
     73, 73, 87, 87, 73, 73, 98, 98,
   ];
 
+  /* Title-screen music – NES-era heroic march in C major, 16th-note
+     square lead over a triangle-bass walk with a kick-hat noise pulse
+     on every beat. Two 8-bar phrases so it doesn't loop too quickly. */
+  var titlePattern = [
+    /* Phrase A */
+    [523, 'square'], [659, 'square'], [784, 'square'], [659, 'square'],
+    [784, 'square'], [1047, 'square'], [988, 'square'], [784, 'square'],
+    [880, 'square'], [1047, 'square'], [1319, 'square'], [1047, 'square'],
+    [988, 'square'], [784, 'square'], [659, 'square'], [523, 'square'],
+    /* Phrase B */
+    [698, 'square'], [880, 'square'], [1047, 'square'], [880, 'square'],
+    [1047, 'square'], [1397, 'square'], [1319, 'square'], [1047, 'square'],
+    [1175, 'square'], [988, 'square'], [784, 'square'], [587, 'square'],
+    [659, 'square'], [784, 'square'], [1047, 'square'], [784, 'square'],
+  ];
+  var titleBass = [
+    131, 131, 131, 131, 196, 196, 196, 196,
+    220, 220, 220, 220, 131, 131, 196, 196,
+    175, 175, 175, 175, 220, 220, 220, 220,
+    196, 196, 147, 147, 131, 131, 196, 131,
+  ];
+  /* 1 = kick (noise burst), 0 = nothing — NES-era drum-less synth still
+     benefits from a small noise thump on the strong beats. */
+  var titleDrums = [
+    1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0,
+    1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0,
+  ];
+
   function startMusic(type) {
     stopMusic();
     if (!ctx || muted) return;
-    var pattern = type === 'boss' ? bossPattern : bgmPattern;
-    var bass = type === 'boss' ? bossBass : bgmBass;
-    var tempo = type === 'boss' ? 180 : 110;
+    var pattern, bass, drums, tempo;
+    if (type === 'boss') {
+      pattern = bossPattern; bass = bossBass; drums = null; tempo = 180;
+    } else if (type === 'title') {
+      pattern = titlePattern; bass = titleBass; drums = titleDrums; tempo = 150;
+    } else {
+      pattern = bgmPattern; bass = bgmBass; drums = null; tempo = 110;
+    }
     var beatDur = 60 / tempo;
     var noteIdx = 0;
 
@@ -205,13 +238,19 @@
         var when = t + i * beatDur;
 
         /* Melody */
-        playNote(note[0], note[1], beatDur * 0.8, 0.15, musicGain, when);
+        var melodyGain = type === 'title' ? 0.13 : 0.15;
+        playNote(note[0], note[1], beatDur * 0.8, melodyGain, musicGain, when);
+        /* Title gets a subtle second square an octave lower for width */
+        if (type === 'title') {
+          playNote(note[0] * 0.5, 'square', beatDur * 0.8, 0.06, musicGain, when);
+        }
         /* Bass */
         playNote(bNote, 'triangle', beatDur * 0.9, 0.12, musicGain, when);
 
         if (type === 'boss') {
-          /* Extra percussive feel on beat */
           if (idx % 4 === 0) noise(0.04, musicGain, when);
+        } else if (type === 'title' && drums && drums[idx]) {
+          noise(0.035, musicGain, when);
         }
       }
       noteIdx = (noteIdx + 4) % pattern.length;

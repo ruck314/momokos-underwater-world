@@ -197,17 +197,20 @@
       var rightCx = canvasLogicalW() - rStrip / 2;
       var cy = canvasLogicalH() / 2;
       /* D-pad sized off the actual strip width so a wider strip gives
-         larger, easier-to-hit buttons on iPhone. outer dimension
-         = leftCx + spacing + pad must fit in lStrip with a small margin. */
-      var pad = Math.min(54, Math.floor(lStrip / 4.5));
-      var spacing = Math.min(66, Math.floor(lStrip / 3.8));
+         larger, easier-to-hit buttons on iPhone. The 0.85 factor shrinks
+         the buttons 15% from the previous layout at Momoko's request so
+         they sit more comfortably in the left strip. */
+      var pad = Math.floor(Math.min(54, Math.floor(lStrip / 4.5)) * 0.85);
+      var spacing = Math.floor(Math.min(66, Math.floor(lStrip / 3.8)) * 0.85);
       touchButtons.up =    { x: leftCx, y: cy - spacing, r: pad, active: false };
       touchButtons.down =  { x: leftCx, y: cy + spacing, r: pad, active: false };
       touchButtons.left =  { x: leftCx - spacing, y: cy, r: pad, active: false };
       touchButtons.right = { x: leftCx + spacing, y: cy, r: pad, active: false };
       touchButtons.action = { x: rightCx, y: cy, r: 80, active: false };
-      /* Pause: upper-right corner of the game viewport (canvas coords). */
-      touchButtons.pause  = { x: lStrip + GAME_W - 34, y: tStrip + 34, r: 28, active: false };
+      /* Pause sits in the upper-right bezel square (the empty space above
+         the BUBBLE button) rather than over gameplay, so it no longer
+         obscures the action. */
+      touchButtons.pause  = { x: rightCx, y: 30, r: 22, active: false };
     } else {
       /* Keyboard-only / desktop fallback – touch buttons aren't actually
          drawn in this branch (isTouchDevice is false), but keep a layout

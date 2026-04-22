@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.2.0';
+  Game.VERSION = 'v1.3.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -80,6 +80,11 @@
      the retry button can drop the player just outside the boss arena
      instead of sending them all the way back to the level start. */
   var lastDeathInBoss = false;
+
+  /* Dialogue message queued during the playing-state render; drawn in
+     canvas-space after the game viewport is painted so it can live in
+     the bottom bezel instead of covering gameplay. */
+  var pendingDialogue = null;
 
   /* ---- Background parallax layers ---- */
   var bgLayers = [];
@@ -572,7 +577,9 @@
         renderGame();
         Game.ui.drawHUD(ctx, player);
         if (boss && boss.active) boss.drawHealthBar(ctx);
-        /* NPC dialogue */
+        /* Dialogue is deferred to canvas-space after the restore so it
+           can live in the bottom bezel instead of covering gameplay. */
+        pendingDialogue = null;
         for (var nd = 0; nd < npcs.length; nd++) {
           var npc = npcs[nd].entity;
           if (npc.talking) {
@@ -584,12 +591,11 @@
             else if (name === 'crab') speakerName = Game.i18n.t('crabName');
             else speakerName = name;
             var text = npc.currentJoke || npc.currentText || '';
-            Game.ui.drawDialogue(ctx, speakerName, text);
+            pendingDialogue = { speaker: speakerName, text: text };
           }
         }
-        /* Boss dialogue */
         if (boss && boss.talkTimer > 0 && boss.talkText) {
-          Game.ui.drawDialogue(ctx, boss.talkSpeaker || 'Moni', boss.talkText);
+          pendingDialogue = { speaker: boss.talkSpeaker || 'Moni', text: boss.talkText };
         }
         break;
 
@@ -615,11 +621,31 @@
 
     ctx.restore();
 
-    /* Touch buttons live in canvas coordinates so they overlay both the
-       side strips and (for pause) the game viewport. Only shown during
-       active gameplay. */
+    /* Canvas-space overlays sit outside the game viewport so they can
+       use the bezel area. */
+    if (Game.input.isTouch() && (state === State.PLAYING || state === State.PAUSED)) {
+      /* QR code in the upper-right bezel inviting another player to scan.
+         Sized to fit between the pause button (top) and the BUBBLE
+         action button (middle) even on a short iPhone canvas. */
+      var rightCx = CANVAS_W - Game.TOUCH_RIGHT_W / 2;
+      var qrSize = Math.min(Game.TOUCH_RIGHT_W - 16, 110);
+      var qrCy = 62 + qrSize / 2;
+      if (qrSize >= 60 && Game.ui.drawQRCode) {
+        Game.ui.drawQRCode(ctx, rightCx, qrCy, qrSize);
+      }
+    }
     if (Game.input.isTouch() && state === State.PLAYING) {
       Game.input.drawTouchButtons(ctx);
+    }
+
+    /* Dialogue – drawn in canvas-space so it lives in the bottom bezel. */
+    if (state === State.PLAYING && pendingDialogue && Game.ui.drawDialogue) {
+      Game.ui.drawDialogue(
+        ctx,
+        pendingDialogue.speaker,
+        pendingDialogue.text,
+        CANVAS_W, CANVAS_H, GAME_X, GAME_Y
+      );
     }
   }
 
@@ -790,47 +816,16 @@
     }
     ctx.restore();
 
-    /* Platforms (organic rounded coral shapes) */
+    /* Platforms – barnacle-crusted ocean rocks instead of orange blobs.
+       Each block is a weathered stone outcrop: dark base, a weathered
+       top face, faint crack lines, scattered barnacle clusters, and a
+       crown of algae / anemones up top so it reads as part of a reef. */
     for (var pl = 0; pl < level.platforms.length; pl++) {
       var pf = level.platforms[pl];
       var px = pf.x - camera.x;
       var py = pf.y - camera.y;
       if (px + pf.w < 0 || px > W) continue;
-
-      var pcx = px + pf.w / 2;
-      var pcy = py + pf.h / 2;
-      var phw = pf.w / 2;
-      var phh = pf.h / 2;
-
-      /* Main coral body – organic blob */
-      ctx.fillStyle = '#cc5544';
-      ctx.beginPath();
-      ctx.moveTo(px + 4, py + phh);
-      ctx.bezierCurveTo(px + 2, py + 4, pcx - phw * 0.2, py + 2, pcx, py + 3);
-      ctx.bezierCurveTo(pcx + phw * 0.2, py + 2, px + pf.w - 2, py + 4, px + pf.w - 4, py + phh);
-      ctx.bezierCurveTo(px + pf.w - 2, py + pf.h - 4, pcx + phw * 0.3, py + pf.h - 1, pcx, py + pf.h - 2);
-      ctx.bezierCurveTo(pcx - phw * 0.3, py + pf.h - 1, px + 2, py + pf.h - 4, px + 4, py + phh);
-      ctx.closePath();
-      ctx.fill();
-
-      /* Highlight ridge */
-      ctx.fillStyle = '#dd7766';
-      ctx.beginPath();
-      ctx.moveTo(px + 6, py + 6);
-      ctx.quadraticCurveTo(pcx, py + 3, px + pf.w - 6, py + 6);
-      ctx.quadraticCurveTo(pcx, py + 10, px + 6, py + 6);
-      ctx.closePath();
-      ctx.fill();
-
-      /* Polyps (small circles on surface) */
-      ctx.fillStyle = '#ee9988';
-      for (var sp = 0; sp < 4; sp++) {
-        var spx = px + 8 + sp * (pf.w / 4);
-        var spy = pcy + Math.sin(sp * 2.5) * (phh * 0.4);
-        ctx.beginPath();
-        ctx.arc(spx, spy, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      drawRockPlatform(ctx, px, py, pf.w, pf.h, pf.x);
     }
 
     /* Water surface effect */
@@ -918,6 +913,169 @@
     fogGrad.addColorStop(1, 'rgba(10, 22, 40, 0.1)');
     ctx.fillStyle = fogGrad;
     ctx.fillRect(0, 0, W, H);
+  }
+
+  /* Barnacle-crusted rock outcrop used as a collision platform. Looks
+     like a weathered reef boulder rather than an orange blob: stone
+     gradient body, a lighter weathered top, hairline cracks, barnacle
+     clusters, and a crown of algae / anemone tufts. `seed` (world-x)
+     deterministically shuffles the details so each rock looks distinct
+     without flickering as the camera scrolls. */
+  function drawRockPlatform(c, px, py, pw, ph, seed) {
+    var cx = px + pw / 2;
+    var cy = py + ph / 2;
+    var hw = pw / 2;
+    var hh = ph / 2;
+
+    /* Deterministic pseudo-random so rocks stay stable as the camera
+       scrolls (don't use Math.random here). */
+    function rand(n) {
+      var v = Math.sin((seed + n * 12.9898) * 78.233) * 43758.5453;
+      return v - Math.floor(v);
+    }
+
+    /* Drop-shadow under the rock so it feels seated on the reef */
+    c.save();
+    c.globalAlpha = 0.35;
+    c.fillStyle = '#05101c';
+    c.beginPath();
+    c.ellipse(cx, py + ph - 1, hw * 0.95, 4, 0, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+
+    /* Main rock body – knobbly ellipse traced with a few bumps so it
+       doesn't look like a perfect oval. Darker at the base. */
+    var bumps = 8;
+    c.fillStyle = '#3a4350';
+    c.beginPath();
+    for (var i = 0; i <= bumps; i++) {
+      var t = i / bumps;
+      var ang = Math.PI + Math.PI * t; /* top half, left to right */
+      var jitter = (rand(i + 1) - 0.5) * Math.min(6, hh * 0.35);
+      var ex = cx + Math.cos(ang) * (hw + jitter * 0.2);
+      var ey = cy + Math.sin(ang) * (hh + jitter);
+      if (i === 0) c.moveTo(ex, ey);
+      else c.lineTo(ex, ey);
+    }
+    /* Bottom edge flat-ish so it reads as rooted to the seafloor */
+    c.lineTo(px + pw, py + ph);
+    c.lineTo(px, py + ph);
+    c.closePath();
+    c.fill();
+
+    /* Mid-tone weathered fill on top so there's directional lighting */
+    var grad = c.createLinearGradient(0, py, 0, py + ph);
+    grad.addColorStop(0, '#6c7784');
+    grad.addColorStop(0.55, '#4a5361');
+    grad.addColorStop(1, '#2d333d');
+    c.fillStyle = grad;
+    c.beginPath();
+    for (var j = 0; j <= bumps; j++) {
+      var t2 = j / bumps;
+      var ang2 = Math.PI + Math.PI * t2;
+      var jt = (rand(j + 21) - 0.5) * Math.min(5, hh * 0.3);
+      var ex2 = cx + Math.cos(ang2) * (hw - 1 + jt * 0.2);
+      var ey2 = cy + Math.sin(ang2) * (hh - 1 + jt);
+      if (j === 0) c.moveTo(ex2, ey2);
+      else c.lineTo(ex2, ey2);
+    }
+    c.lineTo(px + pw - 2, py + ph - 1);
+    c.lineTo(px + 2, py + ph - 1);
+    c.closePath();
+    c.fill();
+
+    /* Soft top-face highlight so the rock has a clear sunlit crown */
+    c.fillStyle = 'rgba(200,215,230,0.22)';
+    c.beginPath();
+    c.ellipse(cx, py + 3, hw * 0.75, Math.min(5, hh * 0.25), 0, 0, Math.PI * 2);
+    c.fill();
+
+    /* Hairline cracks – two diagonal strokes, jitter by seed */
+    c.strokeStyle = 'rgba(10,14,22,0.55)';
+    c.lineWidth = 0.8;
+    c.beginPath();
+    var crackX = px + pw * (0.25 + rand(3) * 0.15);
+    c.moveTo(crackX, py + 4);
+    c.lineTo(crackX + 3, cy);
+    c.lineTo(crackX - 1, py + ph - 5);
+    c.stroke();
+    c.beginPath();
+    var crackX2 = px + pw * (0.6 + rand(7) * 0.15);
+    c.moveTo(crackX2, py + 5);
+    c.lineTo(crackX2 + 4, cy + 2);
+    c.stroke();
+
+    /* Barnacle clusters – little off-white cones with a dark ring */
+    var barnacleCount = Math.max(3, Math.floor(pw / 18));
+    for (var bi = 0; bi < barnacleCount; bi++) {
+      var bx = px + 4 + rand(bi + 30) * (pw - 8);
+      var by = py + 6 + rand(bi + 40) * (ph - 14);
+      var br = 1.4 + rand(bi + 50) * 1.2;
+      c.fillStyle = '#e4dcc8';
+      c.beginPath();
+      c.arc(bx, by, br, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#6d6456';
+      c.beginPath();
+      c.arc(bx, by, br * 0.4, 0, Math.PI * 2);
+      c.fill();
+    }
+
+    /* Crown of algae / tube-anemone tufts on the top face */
+    var tufts = Math.max(2, Math.floor(pw / 22));
+    for (var ti = 0; ti < tufts; ti++) {
+      var tx = px + 6 + (ti + 0.5) * ((pw - 12) / tufts) + (rand(ti + 60) - 0.5) * 4;
+      var kind = rand(ti + 70);
+      if (kind < 0.55) {
+        /* Algae tuft – green fronds */
+        c.strokeStyle = '#2d7a3a';
+        c.lineWidth = 1.4;
+        c.lineCap = 'round';
+        var sway = Math.sin(Date.now() * 0.0012 + seed * 0.01 + ti) * 1.5;
+        for (var fr = -1; fr <= 1; fr++) {
+          c.beginPath();
+          c.moveTo(tx + fr * 1.4, py + 3);
+          c.quadraticCurveTo(tx + fr * 1.4 + sway, py - 2, tx + fr * 2 + sway * 1.3, py - 6);
+          c.stroke();
+        }
+        c.fillStyle = '#3ea054';
+        c.beginPath();
+        c.arc(tx, py + 3, 1.6, 0, Math.PI * 2);
+        c.fill();
+      } else if (kind < 0.85) {
+        /* Anemone – purple stalk with waving tentacles */
+        c.fillStyle = '#6a3b8a';
+        c.beginPath();
+        c.ellipse(tx, py + 2, 2.4, 2, 0, 0, Math.PI * 2);
+        c.fill();
+        c.strokeStyle = '#b07bcf';
+        c.lineWidth = 0.9;
+        c.lineCap = 'round';
+        for (var tc = 0; tc < 5; tc++) {
+          var ta = -Math.PI / 2 + (tc - 2) * 0.35;
+          var wg = Math.sin(Date.now() * 0.002 + seed * 0.05 + tc) * 1;
+          c.beginPath();
+          c.moveTo(tx, py + 1);
+          c.lineTo(tx + Math.cos(ta) * 4 + wg, py + 1 + Math.sin(ta) * 4);
+          c.stroke();
+        }
+      } else {
+        /* Sea urchin – spiny black dome */
+        c.fillStyle = '#1c1620';
+        c.beginPath();
+        c.arc(tx, py + 2, 2.2, 0, Math.PI * 2);
+        c.fill();
+        c.strokeStyle = '#1c1620';
+        c.lineWidth = 0.7;
+        for (var sp2 = 0; sp2 < 8; sp2++) {
+          var sa = -Math.PI + (sp2 / 8) * Math.PI;
+          c.beginPath();
+          c.moveTo(tx, py + 2);
+          c.lineTo(tx + Math.cos(sa) * 4, py + 2 + Math.sin(sa) * 4);
+          c.stroke();
+        }
+      }
+    }
   }
 
   /* Reef coral – three styles selected by variant 0/1/2 so the level
@@ -1161,6 +1319,11 @@
 
     switch (state) {
       case State.TITLE:
+        /* First click on the title bootstraps Web Audio (browsers block
+           autoplay) so the menu music can start. */
+        Game.audio.init();
+        Game.audio.resume();
+        if (Game.audio.currentMusic() !== 'title') Game.audio.startMusic('title');
         var action = Game.ui.handleTitleClick(mx, my);
         if (action === 'play') state = State.CUSTOMIZE;
         break;
@@ -1178,7 +1341,7 @@
       case State.PAUSED:
         var pAction = Game.ui.handlePauseClick(mx, my);
         if (pAction === 'resume') state = State.PLAYING;
-        else if (pAction === 'quit') { Game.audio.stopMusic(); state = State.TITLE; }
+        else if (pAction === 'quit') { Game.audio.startMusic('title'); state = State.TITLE; }
         break;
 
       case State.GAME_OVER:
@@ -1188,7 +1351,7 @@
 
       case State.VICTORY:
         var vAction = Game.ui.handleVictoryClick(mx, my);
-        if (vAction === 'restart') { state = State.TITLE; }
+        if (vAction === 'restart') { Game.audio.startMusic('title'); state = State.TITLE; }
         break;
 
       case State.BEACH:
