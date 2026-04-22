@@ -153,6 +153,13 @@
         { type: 'oliver', x: 700, y: 240 },
         { type: 'kittycorn', x: 2150, y: 220 },
         { type: 'bob', x: 3200, y: 300 },
+        /* Friendly crabs scuttling along the seafloor – they tell jokes
+           when the player swims close. Spaced out across sections so the
+           player meets a new one every few screens. */
+        { type: 'crab', x: 380, y: 426 },
+        { type: 'crab', x: 1280, y: 426 },
+        { type: 'crab', x: 2380, y: 426 },
+        { type: 'crab', x: 3380, y: 426 },
       ],
 
       pickups: [

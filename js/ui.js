@@ -241,6 +241,17 @@
     var muteLabel = Game.i18n.t(Game.audio.isMuted() ? 'soundOff' : 'soundOn');
     drawButton(c, muteLabel, W / 2 - 90, 320, 180, 44);
     drawButton(c, Game.i18n.t('quit'), W / 2 - 90, 380, 180, 44);
+
+    /* Version stamp – matches the title-screen stamp so we can tell at a
+       glance which build is paused (handy for bug reports). */
+    if (Game.VERSION) {
+      c.fillStyle = '#6688aa';
+      c.font = '11px monospace';
+      c.textAlign = 'right';
+      c.textBaseline = 'alphabetic';
+      var pStamp = Game.VERSION + (Game.BUILD ? ' (' + Game.BUILD + ')' : '');
+      c.fillText(pStamp, W - 8, H - 8);
+    }
     c.restore();
   }
 
@@ -656,19 +667,129 @@
   }
 
   /* ---- Beach Cutscene ---- */
+  /* Scene config is regenerated on every breach via startBeachCutscene()
+     so each surface trip looks a little different (time of day, who's on
+     the beach, what they're doing). Falls back to a default scene if the
+     state ever ends up rendered without a config. */
   var beachTimer = 0;
   var beachKitty = null;
-  var beachSeagulls = [
-    { x: 120, y: 70, spd: 0.4, phase: 0 },
-    { x: 340, y: 50, spd: 0.3, phase: 1.2 },
-    { x: 520, y: 90, spd: 0.5, phase: 2.3 },
-    { x: 700, y: 60, spd: 0.35, phase: 0.8 },
-    { x: 220, y: 110, spd: 0.45, phase: 3.1 },
-  ];
-  var beachCrabs = [
-    { baseX: 260, y: 0, dir: 1, phase: 0 },
-    { baseX: 580, y: 0, dir: -1, phase: 1.7 },
-  ];
+  var beachScene = null;
+
+  /* Time-of-day palettes – each set drives sky gradient, distant hills,
+     sand, water, and sun colour so the whole frame stays cohesive. */
+  var BEACH_PALETTES = {
+    morning: {
+      sky: ['#aedcf2', '#dbeefb', '#fff1d4'],
+      hills: '#7aa6c5',
+      sand: ['#f3dfa6', '#ecca80', '#d8b070'],
+      water: '#1e8fc8',
+      waterMid: '#39a3d8',
+      waterLight: '#73c4e8',
+      sun: '#fff9c0',
+      sunCore: '#fff8a8',
+      sunRays: 'rgba(255,250,200,0.10)',
+    },
+    noon: {
+      sky: ['#4a9ee6', '#89c6f2', '#ffd89b'],
+      hills: '#7fa8c9',
+      sand: ['#f0d590', '#e8c478', '#d4a968'],
+      water: '#1e7bb8',
+      waterMid: '#2e95cc',
+      waterLight: '#5ab4dd',
+      sun: '#fff6a8',
+      sunCore: '#fff6a8',
+      sunRays: 'rgba(255,244,176,0.12)',
+    },
+    sunset: {
+      sky: ['#ff7e5f', '#feb47b', '#ffd29a'],
+      hills: '#9a5e7e',
+      sand: ['#f4c282', '#e69e63', '#c47a4a'],
+      water: '#3a4a8a',
+      waterMid: '#5a6cae',
+      waterLight: '#8a9acf',
+      sun: '#ffd06b',
+      sunCore: '#ffb766',
+      sunRays: 'rgba(255,180,110,0.18)',
+    },
+  };
+
+  var BEACH_TITLES = ['beachTitle', 'beachTitleAlt1', 'beachTitleAlt2', 'beachTitleAlt3'];
+  var BEACH_TEXTS = ['beachText', 'beachTextAlt1', 'beachTextAlt2', 'beachTextAlt3'];
+  var BEACH_KID_COLORS = ['#33bb77', '#cc44aa', '#ee7733', '#3388dd', '#dd3344', '#9966dd'];
+
+  function makeBeachScene() {
+    var times = ['morning', 'noon', 'sunset'];
+    var time = times[Math.floor(Math.random() * times.length)];
+    var pal = BEACH_PALETTES[time];
+
+    /* Seagulls (3-6 birds at varied heights) */
+    var gullCount = 3 + Math.floor(Math.random() * 4);
+    var gulls = [];
+    for (var g = 0; g < gullCount; g++) {
+      gulls.push({
+        x: Math.random() * W,
+        y: 40 + Math.random() * 90,
+        spd: 0.25 + Math.random() * 0.35,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+
+    /* Crabs (2-4) with random base positions */
+    var crabCount = 2 + Math.floor(Math.random() * 3);
+    var crabs = [];
+    for (var cb = 0; cb < crabCount; cb++) {
+      crabs.push({
+        baseX: 100 + Math.random() * (W - 200),
+        dir: Math.random() > 0.5 ? 1 : -1,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+
+    /* Kids (1-3) playing on the sand, each with a random shirt colour */
+    var kidCount = 1 + Math.floor(Math.random() * 3);
+    var kids = [];
+    for (var k = 0; k < kidCount; k++) {
+      kids.push({
+        x: 180 + k * (440 / kidCount) + Math.random() * 40,
+        y: 0.82 + Math.random() * 0.06,
+        color: BEACH_KID_COLORS[Math.floor(Math.random() * BEACH_KID_COLORS.length)],
+        bobOffset: Math.random() * Math.PI * 2,
+      });
+    }
+
+    /* Optional flourishes */
+    var hasBeachBall = Math.random() < 0.55;
+    var ballX = 200 + Math.random() * 400;
+    var hasFrisbee = Math.random() < 0.45;
+    var frisbeeX = 200 + Math.random() * 400;
+    var hasDolphin = Math.random() < 0.35;
+
+    /* Title / subtitle pulled from translation pools so JP/EN both vary */
+    var titleKey = BEACH_TITLES[Math.floor(Math.random() * BEACH_TITLES.length)];
+    var textKey = BEACH_TEXTS[Math.floor(Math.random() * BEACH_TEXTS.length)];
+
+    return {
+      time: time,
+      pal: pal,
+      gulls: gulls,
+      crabs: crabs,
+      kids: kids,
+      hasBeachBall: hasBeachBall,
+      ballX: ballX,
+      hasFrisbee: hasFrisbee,
+      frisbeeX: frisbeeX,
+      hasDolphin: hasDolphin,
+      dolphinPhase: Math.random() * Math.PI * 2,
+      titleKey: titleKey,
+      textKey: textKey,
+    };
+  }
+
+  function startBeachCutscene() {
+    beachTimer = 0;
+    beachKitty = null;
+    beachScene = makeBeachScene();
+  }
 
   function drawPalmTree(c, x, groundY, scale, sway) {
     var s = scale || 1;
@@ -976,23 +1097,31 @@
   function drawBeachCutscene(c, wolfe) {
     beachTimer++;
     var t = beachTimer;
+    /* Lazily seed a default scene if the engine somehow rendered the
+       cutscene without calling startBeachCutscene first. */
+    if (!beachScene) beachScene = makeBeachScene();
+    var sc = beachScene;
+    var pal = sc.pal;
 
-    /* Sky gradient */
+    /* Sky gradient – three-stop palette per time of day */
     var skyGrad = c.createLinearGradient(0, 0, 0, H * 0.6);
-    skyGrad.addColorStop(0, '#4a9ee6');
-    skyGrad.addColorStop(0.6, '#89c6f2');
-    skyGrad.addColorStop(1, '#ffd89b');
+    skyGrad.addColorStop(0, pal.sky[0]);
+    skyGrad.addColorStop(0.6, pal.sky[1]);
+    skyGrad.addColorStop(1, pal.sky[2]);
     c.fillStyle = skyGrad;
     c.fillRect(0, 0, W, H * 0.6);
 
-    /* Sun rays */
-    var sunX = 650, sunY = 78;
+    /* Sun position varies with time of day so sunset reads as low / warm */
+    var sunX = sc.time === 'morning' ? 150 : sc.time === 'sunset' ? 690 : 650;
+    var sunY = sc.time === 'sunset' ? 150 : 78;
+
     c.save();
-    c.globalAlpha = 0.12;
-    c.strokeStyle = '#fff4b0';
+    c.globalAlpha = 1;
+    c.strokeStyle = pal.sun;
     c.lineWidth = 3;
     for (var ry = 0; ry < 14; ry++) {
       var ra = (ry / 14) * Math.PI * 2 + t * 0.002;
+      c.globalAlpha = 0.12;
       c.beginPath();
       c.moveTo(sunX, sunY);
       c.lineTo(sunX + Math.cos(ra) * 180, sunY + Math.sin(ra) * 180);
@@ -1002,18 +1131,18 @@
 
     /* Sun glow */
     var sunGrad = c.createRadialGradient(sunX, sunY, 10, sunX, sunY, 80);
-    sunGrad.addColorStop(0, 'rgba(255, 255, 180, 0.9)');
-    sunGrad.addColorStop(1, 'rgba(255, 220, 100, 0)');
+    sunGrad.addColorStop(0, pal.sunRays.replace(/[\d.]+\)$/, '0.9)'));
+    sunGrad.addColorStop(1, pal.sunRays.replace(/[\d.]+\)$/, '0)'));
     c.fillStyle = sunGrad;
     c.fillRect(sunX - 90, sunY - 90, 180, 180);
     /* Sun core */
-    c.fillStyle = '#fff6a8';
+    c.fillStyle = pal.sunCore;
     c.beginPath();
     c.arc(sunX, sunY, 32, 0, Math.PI * 2);
     c.fill();
 
     /* Distant hills */
-    c.fillStyle = '#7fa8c9';
+    c.fillStyle = pal.hills;
     c.beginPath();
     c.moveTo(0, H * 0.58);
     c.bezierCurveTo(120, H * 0.5, 200, H * 0.55, 320, H * 0.53);
@@ -1024,8 +1153,8 @@
     c.closePath();
     c.fill();
 
-    /* Clouds */
-    c.fillStyle = '#ffffff';
+    /* Clouds – tinted slightly to match palette */
+    c.fillStyle = sc.time === 'sunset' ? '#ffd0b0' : '#ffffff';
     for (var cl = 0; cl < 4; cl++) {
       var cx = ((200 + cl * 220 + t * 0.25) % (W + 200)) - 100;
       var cy = 50 + cl * 18;
@@ -1039,19 +1168,39 @@
       c.globalAlpha = 1;
     }
 
-    /* Seagulls */
-    for (var sg = 0; sg < beachSeagulls.length; sg++) {
-      var bird = beachSeagulls[sg];
+    /* Seagulls (count / positions vary per visit) */
+    for (var sg = 0; sg < sc.gulls.length; sg++) {
+      var bird = sc.gulls[sg];
       bird.x += bird.spd;
       if (bird.x > W + 20) bird.x = -20;
       drawSeagull(c, bird.x, bird.y + Math.sin(t * 0.02 + bird.phase) * 4, t * 0.18 + bird.phase);
     }
 
+    /* Optional dolphin breaching the waves in the distance */
+    if (sc.hasDolphin) {
+      var dPhase = t * 0.012 + sc.dolphinPhase;
+      var dx = ((dPhase * 30) % (W + 200)) - 100;
+      var dyOff = Math.sin(dPhase * 2) * 10 - 6;
+      if (Math.sin(dPhase * 2) > 0) {
+        c.fillStyle = '#3a4a55';
+        c.beginPath();
+        c.ellipse(dx, H * 0.92 + dyOff, 14, 5, -0.3, 0, Math.PI * 2);
+        c.fill();
+        /* Dorsal fin */
+        c.beginPath();
+        c.moveTo(dx, H * 0.92 + dyOff - 2);
+        c.lineTo(dx + 4, H * 0.92 + dyOff - 9);
+        c.lineTo(dx + 8, H * 0.92 + dyOff - 1);
+        c.closePath();
+        c.fill();
+      }
+    }
+
     /* Sand – main beach */
     var sandGrad = c.createLinearGradient(0, H * 0.55, 0, H);
-    sandGrad.addColorStop(0, '#f0d590');
-    sandGrad.addColorStop(0.5, '#e8c478');
-    sandGrad.addColorStop(1, '#d4a968');
+    sandGrad.addColorStop(0, pal.sand[0]);
+    sandGrad.addColorStop(0.5, pal.sand[1]);
+    sandGrad.addColorStop(1, pal.sand[2]);
     c.fillStyle = sandGrad;
     c.beginPath();
     c.moveTo(0, H * 0.6);
@@ -1091,18 +1240,32 @@
     /* Sandcastle */
     drawSandcastle(c, 320, H * 0.82);
 
+    /* Beach ball – bouncing on the sand */
+    if (sc.hasBeachBall) {
+      var ballY = H * 0.86 - Math.abs(Math.sin(t * 0.06)) * 30;
+      drawBeachBall(c, sc.ballX, ballY, t * 0.04);
+    }
+    /* Frisbee – arcing through the sky */
+    if (sc.hasFrisbee) {
+      var frX = (sc.frisbeeX + (t * 1.2) % 600) - 100;
+      var frY = 200 + Math.sin(t * 0.025) * 60;
+      drawFrisbee(c, frX, frY, t * 0.2);
+    }
+
     /* Starfish scattered on sand */
     drawStarfish(c, 140, H * 0.84, 6, 0.4, '#e66442');
     drawStarfish(c, 500, H * 0.78, 5, 1.1, '#e6a84a');
     drawStarfish(c, 720, H * 0.77, 5, 0.7, '#d94a5a');
 
-    /* Stick figure kids playing */
-    drawKid(c, 240, H * 0.86, '#33bb77', t * 0.08);
-    drawKid(c, 600, H * 0.82, '#cc44aa', t * 0.08 + 1.3);
+    /* Kids – count and colours vary per visit */
+    for (var ki = 0; ki < sc.kids.length; ki++) {
+      var kid = sc.kids[ki];
+      drawKid(c, kid.x, H * kid.y, kid.color, t * 0.08 + kid.bobOffset);
+    }
 
     /* Crabs walking on sand */
-    for (var cb = 0; cb < beachCrabs.length; cb++) {
-      var crab = beachCrabs[cb];
+    for (var cb = 0; cb < sc.crabs.length; cb++) {
+      var crab = sc.crabs[cb];
       var crabX = crab.baseX + Math.sin(t * 0.01 + crab.phase) * 30 * crab.dir;
       var crabY = H * 0.88 + Math.sin(t * 0.04 + crab.phase) * 1;
       drawCrab(c, crabX, crabY, t * 0.2 + crab.phase);
@@ -1114,12 +1277,12 @@
       wolfe.draw(c, 0, 0);
     }
 
-    /* Water at bottom */
-    c.fillStyle = '#1e7bb8';
+    /* Water at bottom – tinted by time of day */
+    c.fillStyle = pal.water;
     c.fillRect(0, H * 0.93, W, H * 0.07);
 
     /* Overlapping waves */
-    c.fillStyle = '#2e95cc';
+    c.fillStyle = pal.waterMid;
     c.beginPath();
     c.moveTo(0, H * 0.93);
     for (var w1 = 0; w1 <= W; w1 += 6) {
@@ -1130,7 +1293,7 @@
     c.closePath();
     c.fill();
 
-    c.fillStyle = '#5ab4dd';
+    c.fillStyle = pal.waterLight;
     c.beginPath();
     c.moveTo(0, H * 0.945);
     for (var w2 = 0; w2 <= W; w2 += 6) {
@@ -1183,7 +1346,7 @@
       }
     }
 
-    /* Title text with shadow */
+    /* Title text with shadow – pulled from a small pool so it varies */
     c.save();
     c.fillStyle = '#ffffff';
     c.font = 'bold 30px monospace';
@@ -1191,7 +1354,7 @@
     c.shadowColor = 'rgba(0,0,0,0.6)';
     c.shadowBlur = 6;
     c.shadowOffsetY = 2;
-    c.fillText(Game.i18n.t('beachTitle'), W / 2, 40);
+    c.fillText(Game.i18n.t(sc.titleKey), W / 2, 40);
     c.restore();
 
     /* Text panel */
@@ -1202,9 +1365,52 @@
     c.fillStyle = '#e8f4ff';
     c.font = '14px monospace';
     c.textAlign = 'center';
-    wrapText(c, Game.i18n.t('beachText'), W / 2, panelY + 22, panelW - 20, 20);
+    wrapText(c, Game.i18n.t(sc.textKey), W / 2, panelY + 22, panelW - 20, 20);
 
     drawButton(c, Game.i18n.t('back'), W / 2 - 90, 140, 180, 40);
+  }
+
+  function drawBeachBall(c, x, y, spin) {
+    var r = 12;
+    /* Base */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+    /* Coloured wedges */
+    var wedges = ['#ee4466', '#ffdd44', '#33aaee'];
+    for (var w = 0; w < 3; w++) {
+      var a0 = spin + (w / 3) * Math.PI * 2;
+      var a1 = a0 + Math.PI / 6;
+      c.fillStyle = wedges[w];
+      c.beginPath();
+      c.moveTo(x, y);
+      c.arc(x, y, r, a0, a1);
+      c.closePath();
+      c.fill();
+    }
+    /* Outline */
+    c.strokeStyle = '#333';
+    c.lineWidth = 0.8;
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.stroke();
+    /* Shadow on sand */
+    c.fillStyle = 'rgba(0,0,0,0.18)';
+    c.beginPath();
+    c.ellipse(x, H * 0.88, 8, 2, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+
+  function drawFrisbee(c, x, y, spin) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(Math.sin(spin) * 0.3);
+    c.fillStyle = '#ff6644';
+    c.beginPath();
+    c.ellipse(0, 0, 12, 3, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#cc3322';
+    c.beginPath();
+    c.ellipse(0, 1, 12, 1.5, 0, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
   }
 
   function handleBeachClick(mx, my) {
@@ -1230,6 +1436,7 @@
     drawCustomizeScreen: drawCustomizeScreen,
     drawIntroScreen: drawIntroScreen,
     drawBeachCutscene: drawBeachCutscene,
+    startBeachCutscene: startBeachCutscene,
     handleTitleClick: handleTitleClick,
     handlePauseClick: handlePauseClick,
     handleGameOverClick: handleGameOverClick,

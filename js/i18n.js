@@ -39,7 +39,13 @@
 
       /* ---- Beach cutscene ---- */
       beachTitle: 'The Beach!',
+      beachTitleAlt1: 'Sunshine Break!',
+      beachTitleAlt2: 'Hello, Surface!',
+      beachTitleAlt3: 'Beach Day!',
       beachText: 'Everyone is having fun on the beach!\nBetter dive back in – the ocean needs you!',
+      beachTextAlt1: 'A breath of fresh sea air!\nMoni is still waiting below…',
+      beachTextAlt2: 'Wolfe is wagging his tail!\nDon\'t forget – Moni won\'t wait forever!',
+      beachTextAlt3: 'The waves are calling you back…\nReady to dive again?',
       back: 'Dive Back In',
 
       /* ---- Customization ---- */
@@ -60,6 +66,7 @@
       kittyGreet: "Hi! I'm Kitty Corn! Be careful – the evil mermaid Moni is up ahead!",
       kittyHint: 'Shoot her with your rainbow bubbles! You can do it!',
       bobGreet: "Ahoy! I'm Bob the ocean expert! Did you know…",
+      crabName: 'Crab',
 
       /* ---- Oliver's poop jokes (20) ---- */
       joke1: 'Why did the toilet paper roll down the hill?\nTo get to the bottom!',
@@ -89,6 +96,16 @@
       fact3: 'Sea otters hold hands while they sleep so they don\'t drift apart!',
       fact4: 'Dolphins sleep with one eye open!',
       fact5: 'A group of jellyfish is called a "smack"!',
+
+      /* ---- Crab jokes (8) – kid-friendly, crab-themed ---- */
+      crabJoke1: 'Why did the crab cross the beach?\nTo get to the OTHER tide!',
+      crabJoke2: 'How do crabs call each other?\nOn their SHELL phones!',
+      crabJoke3: "What do you get when a crab borrows a book?\nA crabby READ!",
+      crabJoke4: 'Why are crabs so bad at sharing?\nThey\'re a little SHELLfish!',
+      crabJoke5: 'What music do crabs love?\nAnything with a SNAPPY beat!',
+      crabJoke6: "Why don't crabs give to charity?\nBecause they\'re shellfish… still!",
+      crabJoke7: "What did the crab say at the gym?\nNo pinch, no gain!",
+      crabJoke8: 'Why was the crab embarrassed?\nThe sea-weed!',
 
       /* ---- Boss ---- */
       heroChallenge: 'Moni! Free my ocean home – right now!',
@@ -136,7 +153,13 @@
 
       /* ---- ビーチ ---- */
       beachTitle: 'ビーチだ！',
+      beachTitleAlt1: 'ひなたぼっこ！',
+      beachTitleAlt2: 'うみのうえ こんにちは！',
+      beachTitleAlt3: 'ビーチに とうちゃく！',
       beachText: 'みんな ビーチで たのしんでるよ！\nうみにもどろう！',
+      beachTextAlt1: 'しおかぜが きもちいい！\nモニが まだ したで まってるよ…',
+      beachTextAlt2: 'ウルフが しっぽを ふってるよ！\nモニは いつまでも まっては くれないよ！',
+      beachTextAlt3: 'なみが よんでるよ…\nもう いちど もぐる？',
       back: 'もぐる',
 
       /* ---- カスタマイズ ---- */
@@ -157,6 +180,7 @@
       kittyGreet: 'こんにちは！キティコーンだよ！きをつけて、わるいにんぎょのモニがこのさきにいるよ！',
       kittyHint: 'にじいろのあわで やっつけて！がんばって！',
       bobGreet: 'やあ！うみのはかせ、ボブだよ！しってた？',
+      crabName: 'カニさん',
 
       /* ---- オリバーのうんちジョーク (20) ---- */
       joke1: 'トイレットペーパーは なぜ さかを ころがったの？\nいちばん したへ いきたかったから！',
@@ -186,6 +210,16 @@
       fact3: 'ラッコは ねるとき てをつないで はなれないようにするよ！',
       fact4: 'イルカは かたほうのめを あけて ねるんだよ！',
       fact5: 'クラゲのむれは 「スマック」 っていうんだよ！',
+
+      /* ---- カニのジョーク (8) ---- */
+      crabJoke1: 'カニは なぜ すなはまを わたったの？\nむこうの しおまで いきたかったから！',
+      crabJoke2: 'カニは どうやって でんわするの？\nカラフォン （かいでんわ）！',
+      crabJoke3: 'カニが ほんを よむと？\nカリカリの どくしょタイム！',
+      crabJoke4: 'カニは なぜ シェアが にがて？\nだって ちょっと “カラに こもりがち” なんだもん！',
+      crabJoke5: 'カニが すきな おんがくは？\nノリの いい ハサミビート！',
+      crabJoke6: 'カニは なぜ きまえが わるい？\nだって カラに こもっているから！',
+      crabJoke7: 'カニが ジムで いったことばは？\n“はさまずして えいこうなし！”',
+      crabJoke8: 'カニが はずかしがった りゆうは？\nワカメ（みられた）！',
 
       /* ---- ボス ---- */
       heroChallenge: 'モニ！わたしの うみを かえして！いますぐ！',
@@ -229,6 +263,11 @@
     getFact: function () {
       var n = Math.floor(Math.random() * 5) + 1;
       return this.t('fact' + n);
+    },
+
+    getCrabJoke: function () {
+      var n = Math.floor(Math.random() * 8) + 1;
+      return this.t('crabJoke' + n);
     }
   };
 })();

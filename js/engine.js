@@ -4,22 +4,31 @@
   window.Game = window.Game || {};
 
   var W = 800, H = 480;
-  /* On touch devices we pad the canvas with a control strip on each side of
-     the 800×480 game viewport (D-pad on the left, BUBBLE on the right) so
-     the landscape-phone aspect ratio stays wide and the thumbs never cover
-     the playfield. The left strip is wider than the right so the D-pad
-     has room to breathe on narrow iPhones (smaller thumbs reach the
-     directions more comfortably than they reach a single BUBBLE target).
-     GAME_X is the x-offset where the game viewport begins inside the
-     canvas; the render loop translates by it so game code keeps using
-     logical 0..W coordinates. */
+  /* On touch devices we pad the canvas around the 800×480 game viewport
+     so thumbs never cover the playfield and the canvas can match the
+     screen's aspect ratio (so it scales up to fill the display).
+
+     Horizontal strips: D-pad on the left, BUBBLE on the right. The left
+     strip is wider so the D-pad has breathing room on narrow iPhones.
+
+     Vertical bezels: when the screen is taller-aspect than the base
+     canvas (iPads, ChromeOS tablets), extra space is split equally above
+     and below the game viewport so the canvas can be scaled up to use
+     the full screen height instead of being letterboxed.
+
+     GAME_X / GAME_Y are the offsets where the game viewport begins
+     inside the canvas; the render loop translates by them so game code
+     keeps using logical 0..W, 0..H coordinates. */
   var TOUCH_LEFT_W = 260;
   var TOUCH_RIGHT_W = 200;
   var CANVAS_W = W;
   var CANVAS_H = H;
   var GAME_X = 0;
-  /* Version stamp shown on the title screen. Bump manually at release time. */
-  Game.VERSION = 'v1.1.0';
+  var GAME_Y = 0;
+  /* Version stamp shown on the title screen and pause menu. Bump manually
+     at release time and tag the matching git release (`git tag vX.Y.Z`)
+     so the in-game stamp lines up with the git tag for debugging. */
+  Game.VERSION = 'v1.2.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -62,7 +71,11 @@
   var bossActivated = false;
   var respawnPos = { x: 0, y: 0 };
   var npcCooldowns = {};
-  var beachSeen = false;
+  /* Beach trigger arming. The cutscene fires every time the player breaks
+     the surface, but we don't want it ping-ponging while they bob near the
+     waterline – so the trigger disarms after firing and only re-arms once
+     the player has dived back below the surface by a reasonable amount. */
+  var beachReady = true;
   /* True when the most recent GAME_OVER happened during the boss fight, so
      the retry button can drop the player just outside the boss arena
      instead of sending them all the way back to the level start. */
@@ -185,6 +198,7 @@
       if (nd.type === 'oliver') npcEntity = new Game.entities.Oliver(nd.x, nd.y);
       else if (nd.type === 'kittycorn') npcEntity = new Game.entities.KittyCorn(nd.x, nd.y);
       else if (nd.type === 'bob') npcEntity = new Game.entities.Bob(nd.x, nd.y);
+      else if (nd.type === 'crab') npcEntity = new Game.entities.Crab(nd.x, nd.y);
       if (npcEntity) npcs.push({ entity: npcEntity, type: nd.type });
     }
 
@@ -482,10 +496,15 @@
           if (npcCooldowns[npcType] > 0) npcCooldowns[npcType]--;
         }
 
-        /* Beach cutscene trigger – only once per game */
-        if (!beachSeen && player.y < level.waterSurface - 10) {
+        /* Beach cutscene trigger – fires every time the player breaches
+           the surface. Re-arms once they dive back below the waterline by
+           a comfortable margin so the cutscene doesn't loop on bobs. */
+        if (beachReady && player.y < level.waterSurface - 10) {
+          beachReady = false;
+          if (Game.ui.startBeachCutscene) Game.ui.startBeachCutscene();
           state = State.BEACH;
-          beachSeen = true;
+        } else if (!beachReady && player.y > level.waterSurface + 60) {
+          beachReady = true;
         }
 
         /* Camera follow */
@@ -532,9 +551,9 @@
     }
 
     /* Translate so all game / menu rendering keeps using logical 0..W,
-       0..H coordinates regardless of the side-strip padding. */
+       0..H coordinates regardless of the side / top / bottom padding. */
     ctx.save();
-    if (GAME_X) ctx.translate(GAME_X, 0);
+    if (GAME_X || GAME_Y) ctx.translate(GAME_X, GAME_Y);
 
     switch (state) {
       case State.TITLE:
@@ -558,7 +577,12 @@
           var npc = npcs[nd].entity;
           if (npc.talking) {
             var name = npcs[nd].type;
-            var speakerName = name === 'oliver' ? 'Oliver' : name === 'kittycorn' ? 'Kitty Corn' : 'Bob';
+            var speakerName;
+            if (name === 'oliver') speakerName = 'Oliver';
+            else if (name === 'kittycorn') speakerName = 'Kitty Corn';
+            else if (name === 'bob') speakerName = 'Bob';
+            else if (name === 'crab') speakerName = Game.i18n.t('crabName');
+            else speakerName = name;
             var text = npc.currentJoke || npc.currentText || '';
             Game.ui.drawDialogue(ctx, speakerName, text);
           }
@@ -896,6 +920,170 @@
     ctx.fillRect(0, 0, W, H);
   }
 
+  /* Reef coral – three styles selected by variant 0/1/2 so the level
+     reads as a varied reef rather than a row of identical orange blobs.
+     `seed` (the world-x of the decoration) is used to deterministically
+     vary heights / branch counts so each instance still looks distinct.
+     0 – branching staghorn (vertical fingers tipped with pale knobs)
+     1 – brain coral (rounded mound with meandering grooves)
+     2 – sea fan (broad ribbed fan)
+   */
+  function drawCoral(c, dx, dy, variant, seed) {
+    var palette = [
+      { base: '#c95a4a', mid: '#e88366', tip: '#ffd0b0', accent: '#7a2a1d' },
+      { base: '#b8487a', mid: '#d76a9c', tip: '#ffd6e6', accent: '#5b1a3a' },
+      { base: '#d99a3a', mid: '#f0bf5c', tip: '#fff1b3', accent: '#7a5418' },
+    ];
+    var pal = palette[variant % palette.length];
+    var sway = Math.sin(Date.now() * 0.0009 + seed * 0.013) * 1.4;
+
+    if (variant === 1) {
+      drawBrainCoral(c, dx, dy, pal);
+    } else if (variant === 2) {
+      drawFanCoral(c, dx, dy, pal, sway);
+    } else {
+      drawStaghornCoral(c, dx, dy, pal, sway, seed);
+    }
+  }
+
+  function drawStaghornCoral(c, dx, dy, pal, sway, seed) {
+    /* Stable base lump so it looks rooted to the seafloor */
+    c.fillStyle = pal.accent;
+    c.beginPath();
+    c.ellipse(dx, dy + 6, 16, 4, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = pal.base;
+    c.beginPath();
+    c.ellipse(dx, dy + 4, 13, 5, 0, 0, Math.PI * 2);
+    c.fill();
+    /* 3 branching fingers leaning outward */
+    var branches = [
+      { rootX: dx - 7, leanX: -6, h: 18 },
+      { rootX: dx,     leanX: 0,  h: 24 },
+      { rootX: dx + 7, leanX: 6,  h: 20 },
+    ];
+    for (var i = 0; i < branches.length; i++) {
+      var b = branches[i];
+      var hVar = ((seed * (i + 1)) % 7) - 3; /* deterministic ±3 jitter */
+      var h = b.h + hVar;
+      var sw = sway * (0.4 + i * 0.3);
+      var topX = b.rootX + b.leanX + sw;
+      var topY = dy + 2 - h;
+      /* Trunk */
+      c.strokeStyle = pal.base;
+      c.lineWidth = 5;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(b.rootX, dy + 2);
+      c.bezierCurveTo(
+        b.rootX + b.leanX * 0.3, dy - h * 0.4,
+        topX - b.leanX * 0.2, dy + 2 - h * 0.7,
+        topX, topY
+      );
+      c.stroke();
+      /* Mid-tone highlight stripe */
+      c.strokeStyle = pal.mid;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(b.rootX - 1, dy + 1);
+      c.bezierCurveTo(
+        b.rootX + b.leanX * 0.25 - 1, dy - h * 0.4,
+        topX - b.leanX * 0.2 - 1, dy + 2 - h * 0.7,
+        topX - 1, topY + 1
+      );
+      c.stroke();
+      /* Polyp tip */
+      c.fillStyle = pal.tip;
+      c.beginPath();
+      c.arc(topX, topY, 3, 0, Math.PI * 2);
+      c.fill();
+      /* Smaller side knob halfway up the trunk */
+      var midX = b.rootX + b.leanX * 0.5 + sw * 0.5;
+      var midY = dy + 2 - h * 0.55;
+      c.fillStyle = pal.mid;
+      c.beginPath();
+      c.arc(midX + (i % 2 === 0 ? -3 : 3), midY, 2.2, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+
+  function drawBrainCoral(c, dx, dy, pal) {
+    /* Mound */
+    c.fillStyle = pal.accent;
+    c.beginPath();
+    c.ellipse(dx, dy + 4, 18, 5, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = pal.base;
+    c.beginPath();
+    c.ellipse(dx, dy - 2, 16, 11, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Highlight cap */
+    c.fillStyle = pal.mid;
+    c.beginPath();
+    c.ellipse(dx - 2, dy - 5, 12, 5, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Meandering grooves – the "brain" texture */
+    c.strokeStyle = pal.accent;
+    c.lineWidth = 1;
+    c.lineCap = 'round';
+    for (var g = 0; g < 4; g++) {
+      var gy = dy - 6 + g * 3;
+      c.beginPath();
+      c.moveTo(dx - 13, gy);
+      c.bezierCurveTo(dx - 6, gy + 2, dx - 2, gy - 2, dx + 4, gy + 1);
+      c.bezierCurveTo(dx + 8, gy + 2, dx + 11, gy - 1, dx + 13, gy);
+      c.stroke();
+    }
+  }
+
+  function drawFanCoral(c, dx, dy, pal, sway) {
+    /* Short trunk */
+    c.fillStyle = pal.accent;
+    c.fillRect(dx - 2, dy - 2, 4, 8);
+    /* Fan body – broad triangle with rounded top */
+    c.fillStyle = pal.base;
+    c.beginPath();
+    c.moveTo(dx - 1, dy - 2);
+    c.bezierCurveTo(dx - 18 + sway, dy - 14, dx - 14 + sway, dy - 22, dx + sway, dy - 24);
+    c.bezierCurveTo(dx + 14 + sway, dy - 22, dx + 18 + sway, dy - 14, dx + 1, dy - 2);
+    c.closePath();
+    c.fill();
+    /* Mid-tone inner fan */
+    c.fillStyle = pal.mid;
+    c.beginPath();
+    c.moveTo(dx, dy - 4);
+    c.bezierCurveTo(dx - 12 + sway * 0.7, dy - 13, dx - 9 + sway * 0.7, dy - 19, dx + sway * 0.7, dy - 21);
+    c.bezierCurveTo(dx + 9 + sway * 0.7, dy - 19, dx + 12 + sway * 0.7, dy - 13, dx, dy - 4);
+    c.closePath();
+    c.fill();
+    /* Radial veins – fine ribs from base to tips */
+    c.strokeStyle = pal.accent;
+    c.lineWidth = 0.8;
+    var spread = Math.PI * 0.55;
+    for (var v = 0; v < 9; v++) {
+      var t = v / 8;
+      var ang = -Math.PI / 2 - spread / 2 + spread * t;
+      var len = 18 + Math.sin(t * Math.PI) * 4;
+      var endX = dx + sway + Math.cos(ang) * len;
+      var endY = dy - 2 + Math.sin(ang) * len;
+      c.beginPath();
+      c.moveTo(dx, dy - 2);
+      c.lineTo(endX, endY);
+      c.stroke();
+    }
+    /* Bright tip beads along the rim */
+    c.fillStyle = pal.tip;
+    for (var b = 0; b < 5; b++) {
+      var bt = b / 4;
+      var bAng = -Math.PI / 2 - spread / 2 + spread * bt;
+      var bx = dx + sway + Math.cos(bAng) * 22;
+      var by = dy - 2 + Math.sin(bAng) * 22;
+      c.beginPath();
+      c.arc(bx, by, 1.4, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+
   function renderDecorations() {
     if (!level) return;
     for (var i = 0; i < level.decorations.length; i++) {
@@ -922,30 +1110,7 @@
         ctx.closePath();
         ctx.fill();
       } else if (d.type === 'coral') {
-        var colors = ['#ff6655', '#ff9944', '#ffcc33'];
-        var baseColor = colors[d.variant || 0];
-        ctx.fillStyle = baseColor;
-        /* Branching coral – organic blobs */
-        ctx.beginPath();
-        ctx.arc(dx, dy, 12, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(dx + 10, dy - 8, 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(dx - 8, dy - 6, 9, 0, Math.PI * 2);
-        ctx.fill();
-        /* Stems as bezier curves */
-        ctx.strokeStyle = baseColor;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(dx, dy + 6);
-        ctx.quadraticCurveTo(dx - 1, dy, dx, dy - 4);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(dx + 6, dy + 2);
-        ctx.quadraticCurveTo(dx + 8, dy - 2, dx + 10, dy - 6);
-        ctx.stroke();
+        drawCoral(ctx, dx, dy, d.variant || 0, d.x);
       } else if (d.type === 'shell') {
         ctx.fillStyle = '#ffddaa';
         ctx.beginPath();
@@ -1054,11 +1219,13 @@
       respawnPos = { x: rx, y: ry };
       boss.activate();
       bossActivated = true;
-      beachSeen = true;
+      /* Disarm the surface trigger – the player is mid-arena, no need to
+         pop the cutscene if a stray jump carries them up. */
+      beachReady = false;
       camera.x = Math.max(0, Math.min(rx - W / 2 + player.w / 2, level.width - W));
       Game.audio.startMusic('boss');
     } else {
-      beachSeen = false;
+      beachReady = true;
       Game.audio.startMusic('bgm');
     }
     lastDeathInBoss = false;
@@ -1088,40 +1255,82 @@
     requestAnimationFrame(gameLoop);
   }
 
+  /* Compute canvas dimensions to match the current viewport's aspect ratio.
+     Always centers the 800×480 game viewport. Adds horizontal strips for
+     touch controls (asymmetric — wider D-pad side) and additional top /
+     bottom bezel padding when the screen is taller-aspect than the base
+     canvas (iPads etc.) so the canvas can scale up to fill the display
+     instead of being letterboxed in dead space. */
+  function computeCanvasLayout() {
+    var sW = window.innerWidth || W;
+    var sH = window.innerHeight || H;
+    var screenAspect = sW / sH;
+    var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+    if (isTouch) {
+      var lStrip = TOUCH_LEFT_W;
+      var rStrip = TOUCH_RIGHT_W;
+      var baseW = W + lStrip + rStrip;     /* 1260 */
+      var baseH = H;                        /* 480 */
+      var baseAspect = baseW / baseH;       /* 2.625 */
+
+      if (screenAspect < baseAspect * 0.98) {
+        /* Tall-aspect screen (iPad, tablet) — extend canvas vertically so
+           it matches screen aspect. Bezel splits above/below the game. */
+        CANVAS_W = baseW;
+        CANVAS_H = Math.round(baseW / screenAspect);
+        /* Cap so we don't go wildly tall on edge-case displays. */
+        CANVAS_H = Math.min(CANVAS_H, baseH * 4);
+        GAME_X = lStrip;
+        GAME_Y = Math.floor((CANVAS_H - H) / 2);
+      } else if (screenAspect > baseAspect * 1.05) {
+        /* Ultra-wide screen — extend horizontal strips equally. */
+        CANVAS_W = Math.round(baseH * screenAspect);
+        CANVAS_H = baseH;
+        var extraW = CANVAS_W - baseW;
+        GAME_X = lStrip + Math.floor(extraW / 2);
+        GAME_Y = 0;
+      } else {
+        CANVAS_W = baseW;
+        CANVAS_H = baseH;
+        GAME_X = lStrip;
+        GAME_Y = 0;
+      }
+      /* Publish to input.js so touch-strip layout / click mapping match. */
+      Game.TOUCH_LEFT_W = GAME_X;
+      Game.TOUCH_RIGHT_W = CANVAS_W - GAME_X - W;
+      Game.GAME_Y = GAME_Y;
+    } else {
+      CANVAS_W = W;
+      CANVAS_H = H;
+      GAME_X = 0;
+      GAME_Y = 0;
+      Game.TOUCH_LEFT_W = 0;
+      Game.TOUCH_RIGHT_W = 0;
+      Game.GAME_Y = 0;
+    }
+  }
+
+  /* Resize the backing store to match logical canvas dimensions × DPR so
+     rendering stays crisp on retina displays. Cap DPR at 3× to keep the
+     backing-store memory sane on pathological screens. The 2D context's
+     base transform is scaled by dpr so all game code keeps drawing in
+     logical CANVAS_W × CANVAS_H coordinates. */
+  function resizeBackingStore() {
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    canvas.width = CANVAS_W * dpr;
+    canvas.height = CANVAS_H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+  }
+
   /* ---- Init ---- */
   function init() {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
-    /* On touch devices, widen the canvas with control strips on each side
-       of the 800×480 game viewport so the D-pad / BUBBLE buttons live
-       beside gameplay rather than over it, and so the canvas aspect ratio
-       matches landscape phones. */
-    var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    if (isTouch) {
-      CANVAS_W = W + TOUCH_LEFT_W + TOUCH_RIGHT_W;
-      GAME_X = TOUCH_LEFT_W;
-      /* Expose to input.js so the touch-strip layout / click mapping uses
-         the same asymmetric widths. */
-      Game.TOUCH_LEFT_W = TOUCH_LEFT_W;
-      Game.TOUCH_RIGHT_W = TOUCH_RIGHT_W;
-    } else {
-      CANVAS_W = W;
-      GAME_X = 0;
-    }
-    CANVAS_H = H;
-    /* DPI-aware backing store: render at physical pixel density so text
-       and curves stay crisp on retina / high-DPR devices. Cap at 3× to
-       keep the backing store reasonable on pathological displays. The
-       context's base transform is scaled by dpr so all game code keeps
-       drawing in logical CANVAS_W × CANVAS_H coordinates. */
-    var dpr = Math.min(3, window.devicePixelRatio || 1);
-    canvas.width = CANVAS_W * dpr;
-    canvas.height = CANVAS_H * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    /* Enable image smoothing for smooth curves */
-    ctx.imageSmoothingEnabled = true;
+    computeCanvasLayout();
+    resizeBackingStore();
 
     /* Input */
     Game.input.init(canvas);
@@ -1138,8 +1347,11 @@
       }
     });
 
-    /* Handle resize */
+    /* Handle resize – recompute layout (in case orientation / DPR / size
+       changed), re-allocate the backing store, then scale-to-fit via CSS. */
     function resize() {
+      computeCanvasLayout();
+      resizeBackingStore();
       var container = canvas.parentElement;
       var cw = container.clientWidth;
       var ch = container.clientHeight;
@@ -1149,6 +1361,9 @@
       Game.input.refreshLayout();
     }
     window.addEventListener('resize', resize);
+    /* iOS Safari fires orientationchange separately from resize on some
+       devices – listen for both so the layout actually re-fits. */
+    window.addEventListener('orientationchange', resize);
     resize();
 
     /* Prevent default touch behavior on canvas */

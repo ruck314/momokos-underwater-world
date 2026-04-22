@@ -41,11 +41,11 @@
     if (!canvas) return 0;
     return canvas.height / dprFactor();
   }
-  /* On touch devices the canvas is wider than the game viewport (control
-     strips live on each side, usually asymmetric with a wider D-pad strip
-     on the left). gameOffsetX() is the logical x-coordinate where the
-     game viewport begins. Engine.js publishes the strip widths on the
-     Game namespace; fall back to centred padding if it hasn't run yet. */
+  /* On touch devices the canvas is wider (and sometimes taller) than the
+     game viewport – control strips live on the sides, optional bezels
+     above/below for tablets. Engine.js publishes Game.TOUCH_LEFT_W /
+     Game.TOUCH_RIGHT_W / Game.GAME_Y; fall back to centred padding if
+     it hasn't initialised yet. */
   function hasAsymmetricStrips() {
     return canvas &&
            typeof Game.TOUCH_LEFT_W === 'number' &&
@@ -60,8 +60,19 @@
     if (hasAsymmetricStrips()) return Game.TOUCH_RIGHT_W;
     return Math.max(0, Math.floor((canvasLogicalW() - GAME_W) / 2));
   }
+  function topStripH() {
+    if (canvas && typeof Game.GAME_Y === 'number') return Game.GAME_Y;
+    return Math.max(0, Math.floor((canvasLogicalH() - GAME_H) / 2));
+  }
+  function bottomStripH() {
+    if (!canvas) return 0;
+    return Math.max(0, canvasLogicalH() - GAME_H - topStripH());
+  }
   function gameOffsetX() {
     return leftStripW();
+  }
+  function gameOffsetY() {
+    return topStripH();
   }
   /* Back-compat helper – any caller that asks for "the strip width" really
      wants the left one, because that's the D-pad side. */
@@ -169,17 +180,22 @@
   /* Layout touch buttons in canvas coordinates. On touch devices the
      canvas is wider than the game viewport (side strips on each side);
      the D-pad lives in the left strip and BUBBLE in the right strip, so
-     thumbs never cover gameplay. Pause sits in the upper-right corner
-     of the game viewport so it's close at hand but out of the way. */
+     thumbs never cover gameplay. The buttons are vertically centered on
+     the canvas (not the game viewport) so on tall tablets where the
+     canvas extends above/below the game, thumbs land naturally on the
+     side bezel rather than reaching toward the middle of the screen.
+     Pause sits in the upper-right corner of the game viewport so it's
+     close at hand but out of the way. */
   function layoutButtons() {
     if (!canvas) return;
     var lStrip = leftStripW();
     var rStrip = rightStripW();
+    var tStrip = topStripH();
     var hasSideStrips = lStrip > 0;
     if (hasSideStrips) {
       var leftCx = lStrip / 2;
       var rightCx = canvasLogicalW() - rStrip / 2;
-      var cy = GAME_H / 2;
+      var cy = canvasLogicalH() / 2;
       /* D-pad sized off the actual strip width so a wider strip gives
          larger, easier-to-hit buttons on iPhone. outer dimension
          = leftCx + spacing + pad must fit in lStrip with a small margin. */
@@ -190,8 +206,8 @@
       touchButtons.left =  { x: leftCx - spacing, y: cy, r: pad, active: false };
       touchButtons.right = { x: leftCx + spacing, y: cy, r: pad, active: false };
       touchButtons.action = { x: rightCx, y: cy, r: 80, active: false };
-      /* Pause: upper-right of the game viewport (canvas coords). */
-      touchButtons.pause  = { x: lStrip + GAME_W - 34, y: 34, r: 28, active: false };
+      /* Pause: upper-right corner of the game viewport (canvas coords). */
+      touchButtons.pause  = { x: lStrip + GAME_W - 34, y: tStrip + 34, r: 28, active: false };
     } else {
       /* Keyboard-only / desktop fallback – touch buttons aren't actually
          drawn in this branch (isTouchDevice is false), but keep a layout
@@ -240,32 +256,67 @@
     if (canvas) canvasRect = canvas.getBoundingClientRect();
   }
 
-  /* Paint the control strips on each side of the game viewport plus
-     (optionally) the touch buttons. Called every frame on touch devices
-     so the strip background is always present under the buttons. */
+  /* Paint the bezel surrounding the game viewport plus (optionally) the
+     touch buttons. Called every frame on touch devices so the bezel
+     background is always present under the buttons. The game viewport
+     itself gets fully overwritten by the state renderer afterwards, so
+     it's safe to paint across it here. */
   function drawTouchStrip(c, showButtons) {
     if (!canvas) return;
-    var lStrip = leftStripW();
-    var rStrip = rightStripW();
-    if (lStrip > 0) {
-      var lw = canvasLogicalW();
-      paintSidePanel(c, 0, lStrip, /*innerEdgeX*/ lStrip);
-      paintSidePanel(c, lw - rStrip, rStrip, /*innerEdgeX*/ lw - rStrip - 1);
+    var cw = canvasLogicalW();
+    var ch = canvasLogicalH();
+    var gx = gameOffsetX();
+    var gy = gameOffsetY();
+    var rEdge = gx + GAME_W;
+    var bEdge = gy + GAME_H;
+
+    c.save();
+    /* Bezel fill across the entire canvas */
+    c.fillStyle = '#081224';
+    c.fillRect(0, 0, cw, ch);
+
+    /* Inner-edge glow framing the game viewport so the bezel reads as a
+       deliberate frame rather than letterboxing. Skip a side if the game
+       viewport is already flush against that edge. */
+    if (gx > 0) paintEdgeGlow(c, gx - 10, 0, 10, ch, 'h', false);
+    if (rEdge < cw) paintEdgeGlow(c, rEdge, 0, 10, ch, 'h', true);
+    if (gy > 0) paintEdgeGlow(c, 0, gy - 10, cw, 10, 'v', false);
+    if (bEdge < ch) paintEdgeGlow(c, 0, bEdge, cw, 10, 'v', true);
+
+    /* Hairline border at the game viewport edges (drawn in bezel space –
+       the state renderer will paint over the inside of the rect). */
+    if (gx > 0 || gy > 0 || rEdge < cw || bEdge < ch) {
+      c.strokeStyle = '#1a3a60';
+      c.lineWidth = 2;
+      if (gx > 0) {
+        c.beginPath(); c.moveTo(gx + 0.5, 0); c.lineTo(gx + 0.5, ch); c.stroke();
+      }
+      if (rEdge < cw) {
+        c.beginPath(); c.moveTo(rEdge - 0.5, 0); c.lineTo(rEdge - 0.5, ch); c.stroke();
+      }
+      if (gy > 0) {
+        c.beginPath(); c.moveTo(0, gy + 0.5); c.lineTo(cw, gy + 0.5); c.stroke();
+      }
+      if (bEdge < ch) {
+        c.beginPath(); c.moveTo(0, bEdge - 0.5); c.lineTo(cw, bEdge - 0.5); c.stroke();
+      }
     }
+    c.restore();
+
     if (showButtons) drawTouchButtons(c);
   }
 
-  function paintSidePanel(c, x, w, innerEdgeX) {
-    var h = canvasLogicalH();
-    c.save();
-    c.fillStyle = '#081224';
-    c.fillRect(x, 0, w, h);
-    /* Subtle glow along the inner edge so the strip reads as a bezel,
-       not as a letterbox. */
-    var fromX = innerEdgeX < x + w / 2 ? innerEdgeX : innerEdgeX - 10;
-    var toX = innerEdgeX < x + w / 2 ? innerEdgeX + 10 : innerEdgeX;
-    var grad = c.createLinearGradient(fromX, 0, toX, 0);
-    if (innerEdgeX < x + w / 2) {
+  /* `dir` is 'h' for a vertical bezel band (gradient runs horizontally)
+     or 'v' for a horizontal bezel band (gradient runs vertically). When
+     `inward` is true the glow brightens toward the game-viewport side. */
+  function paintEdgeGlow(c, x, y, w, h, dir, inward) {
+    var grad;
+    if (dir === 'h') {
+      grad = c.createLinearGradient(x, 0, x + w, 0);
+    } else {
+      grad = c.createLinearGradient(0, y, 0, y + h);
+    }
+    if (inward) {
       grad.addColorStop(0, 'rgba(100,160,220,0.25)');
       grad.addColorStop(1, 'rgba(10,22,40,0)');
     } else {
@@ -273,14 +324,7 @@
       grad.addColorStop(1, 'rgba(100,160,220,0.25)');
     }
     c.fillStyle = grad;
-    c.fillRect(Math.min(fromX, toX), 0, 10, h);
-    c.strokeStyle = '#1a3a60';
-    c.lineWidth = 2;
-    c.beginPath();
-    c.moveTo(innerEdgeX + 0.5, 0);
-    c.lineTo(innerEdgeX + 0.5, h);
-    c.stroke();
-    c.restore();
+    c.fillRect(x, y, w, h);
   }
 
   function drawTouchButtons(c) {
@@ -362,7 +406,7 @@
     }
     var canvasX = (cx - rect.left) / (rect.width / canvasLogicalW());
     var canvasY = (cy - rect.top) / (rect.height / canvasLogicalH());
-    return { x: canvasX - gameOffsetX(), y: canvasY };
+    return { x: canvasX - gameOffsetX(), y: canvasY - gameOffsetY() };
   }
 
   window.Game.input = {

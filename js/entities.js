@@ -156,11 +156,12 @@
 
   /* Shared Momoko sprite painter – called by gameplay draw and the
      customize-screen preview so both stay visually in sync.
-     Design: Peach-Boy-girl (Momotarō inspired):
+     Design: Peach-Princess swimmer:
        – flowing peach-pink hair
-       – white hachimaki headband with a peach fruit ornament
-       – kimono-style top with a peach-colored obi sash
-       – flippers so she can still swim underwater. */
+       – peach-themed swim headband with a peach-fruit charm
+       – goggles pushed up on the forehead (just the strap shows)
+       – one-piece swimsuit with a frilly peach trim
+       – flippers on the feet. */
   function drawMomokoSprite(c, sx, sy, cust, frame) {
     var hairC = (cust && cust.hair) || '#e06088';
     var suitC = (cust && cust.suit) || '#3366aa';
@@ -184,31 +185,40 @@
     c.ellipse(sx + 14, sy + 6, 11, 6, 0, Math.PI, 0);
     c.fill();
 
-    /* Hachimaki (white headband) */
-    c.fillStyle = '#ffffff';
-    c.fillRect(sx + 3, sy + 5, 22, 3);
-    /* Headband knot tail on the right */
-    c.beginPath();
-    c.moveTo(sx + 25, sy + 5);
-    c.lineTo(sx + 28, sy + 4);
-    c.lineTo(sx + 28, sy + 9);
-    c.lineTo(sx + 25, sy + 8);
-    c.closePath();
-    c.fill();
+    /* Swim headband – thin peach band wrapping the crown */
+    c.fillStyle = '#ff9bb6';
+    c.fillRect(sx + 3, sy + 5, 22, 2);
+    c.fillStyle = '#ffd0dd';
+    c.fillRect(sx + 3, sy + 5, 22, 0.7);
 
-    /* Peach ornament centered on the headband */
+    /* Goggles strap – darker contrasting band just below the headband,
+       the lenses sit on the forehead so we just see the side anchors. */
+    c.fillStyle = '#2a3a4a';
+    c.fillRect(sx + 3, sy + 8, 22, 1.4);
+    /* Goggle eye-cups perched up on the forehead */
+    c.fillStyle = '#e7f4ff';
+    c.beginPath();
+    c.ellipse(sx + 10, sy + 8, 2.2, 1.6, 0, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(sx + 18, sy + 8, 2.2, 1.6, 0, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = '#2a3a4a';
+    c.lineWidth = 0.6;
+    c.beginPath(); c.ellipse(sx + 10, sy + 8, 2.2, 1.6, 0, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); c.ellipse(sx + 18, sy + 8, 2.2, 1.6, 0, 0, Math.PI * 2); c.stroke();
+
+    /* Peach charm sitting on top of the headband */
     c.fillStyle = '#ffc3d0';
     c.beginPath();
     c.arc(sx + 14, sy + 3, 3.2, 0, Math.PI * 2);
     c.fill();
-    /* Peach cleft */
     c.strokeStyle = '#e88aa0';
     c.lineWidth = 0.6;
     c.beginPath();
     c.moveTo(sx + 14, sy + 0.3);
     c.lineTo(sx + 14, sy + 5.6);
     c.stroke();
-    /* Peach leaf */
     c.fillStyle = '#2fa84c';
     c.beginPath();
     c.ellipse(sx + 16.2, sy + 0.8, 2.2, 1.1, 0.6, 0, Math.PI * 2);
@@ -261,37 +271,59 @@
     c.arc(sx + 14, sy + 16, 1.8, 0, Math.PI);
     c.fill();
 
-    /* Kimono top with V-neck collar */
+    /* Neck */
+    c.fillStyle = skinC;
+    c.fillRect(sx + 12, sy + 17, 4, 2);
+
+    /* Swimsuit – one-piece tank cut with halter straps */
+    /* Straps over the shoulders */
+    c.strokeStyle = suitC;
+    c.lineWidth = 1.6;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(sx + 10, sy + 18);
+    c.lineTo(sx + 9, sy + 21);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(sx + 18, sy + 18);
+    c.lineTo(sx + 19, sy + 21);
+    c.stroke();
+    /* Suit body – fitted with a sweetheart neckline */
     c.fillStyle = suitC;
     c.beginPath();
-    c.moveTo(sx + 5, sy + 18);
-    c.quadraticCurveTo(sx + 4, sy + 20, sx + 4, sy + 23);
-    c.lineTo(sx + 4, sy + 27);
-    c.quadraticCurveTo(sx + 4, sy + 30, sx + 8, sy + 30);
-    c.lineTo(sx + 20, sy + 30);
-    c.quadraticCurveTo(sx + 24, sy + 30, sx + 24, sy + 27);
-    c.lineTo(sx + 24, sy + 23);
-    c.quadraticCurveTo(sx + 24, sy + 20, sx + 23, sy + 18);
-    c.lineTo(sx + 16, sy + 18);
-    c.lineTo(sx + 14, sy + 21.5);
-    c.lineTo(sx + 12, sy + 18);
+    c.moveTo(sx + 7, sy + 21);
+    c.quadraticCurveTo(sx + 10, sy + 19.5, sx + 14, sy + 21);
+    c.quadraticCurveTo(sx + 18, sy + 19.5, sx + 21, sy + 21);
+    c.lineTo(sx + 22, sy + 28);
+    c.quadraticCurveTo(sx + 14, sy + 31, sx + 6, sy + 28);
     c.closePath();
     c.fill();
-
-    /* Collar trim (peach) */
-    c.strokeStyle = '#ffb0c0';
-    c.lineWidth = 1.2;
+    /* Suit highlight – subtle lighter band along the chest */
+    c.fillStyle = 'rgba(255,255,255,0.18)';
     c.beginPath();
-    c.moveTo(sx + 6, sy + 18.5);
-    c.lineTo(sx + 14, sy + 21.5);
-    c.lineTo(sx + 22, sy + 18.5);
-    c.stroke();
-
-    /* Obi sash */
-    c.fillStyle = '#ff8fa5';
-    c.fillRect(sx + 4, sy + 25, 20, 3);
-    c.fillStyle = '#ffb0c0';
-    c.fillRect(sx + 12, sy + 24, 4, 5);
+    c.moveTo(sx + 8, sy + 22);
+    c.quadraticCurveTo(sx + 14, sy + 23.5, sx + 20, sy + 22);
+    c.lineTo(sx + 20, sy + 23.5);
+    c.quadraticCurveTo(sx + 14, sy + 25, sx + 8, sy + 23.5);
+    c.closePath();
+    c.fill();
+    /* Frilly peach trim along the waistline */
+    c.fillStyle = '#ff9bb6';
+    for (var fr = 0; fr < 5; fr++) {
+      var fxc = sx + 8 + fr * 3;
+      c.beginPath();
+      c.arc(fxc, sy + 28.5, 1.6, 0, Math.PI);
+      c.fill();
+    }
+    /* Tiny peach motif centered on the chest */
+    c.fillStyle = '#ffc3d0';
+    c.beginPath();
+    c.arc(sx + 14, sy + 24.5, 1.4, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#2fa84c';
+    c.beginPath();
+    c.ellipse(sx + 15, sy + 23.5, 0.9, 0.45, 0.6, 0, Math.PI * 2);
+    c.fill();
 
     /* Bubble gun arm */
     c.fillStyle = skinC;
@@ -829,9 +861,11 @@
     /* Phase check */
     if (this.hp <= this.maxHp * 0.5) this.phase = 2;
 
-    /* Attack patterns */
+    /* Attack patterns. Phase-2 fire rate is intentionally a touch slower
+       than the raw 40-frame cadence (44 ≈ 10% longer interval) – playtest
+       feedback was that the spread shot felt too punishing at point-blank. */
     this.attackTimer++;
-    var attackRate = this.phase === 1 ? 60 : 40;
+    var attackRate = this.phase === 1 ? 60 : 44;
     if (this.attackTimer >= attackRate) {
       this.attackTimer = 0;
       this.fireProjectiles(playerX, playerY);
@@ -1542,6 +1576,140 @@
     c.restore();
   };
 
+  /* ========== CRAB (NPC – friendly joke-teller) ========== */
+  function Crab(x, y) {
+    this.x = x;
+    this.y = y;
+    this.w = 22;
+    this.h = 14;
+    this.spawnX = x;
+    this.spawnY = y;
+    this.timer = Math.random() * 100;
+    this.dir = Math.random() > 0.5 ? 1 : -1;
+    this.legPhase = 0;
+    this.talking = false;
+    this.talkTimer = 0;
+    this.currentJoke = '';
+  }
+
+  Crab.prototype.update = function () {
+    this.timer++;
+    this.legPhase += 0.18;
+    /* Sidestep along a short patrol; flip when you reach the ends so the
+       claws lead the walk – feels more crab-like than smooth oscillation. */
+    var range = 36;
+    var off = this.x - this.spawnX;
+    if (off > range) this.dir = -1;
+    else if (off < -range) this.dir = 1;
+    if (!this.talking) this.x += 0.3 * this.dir;
+    /* Tiny sand-bob */
+    this.y = this.spawnY + Math.sin(this.timer * 0.06) * 0.6;
+    if (this.talking) {
+      this.talkTimer--;
+      if (this.talkTimer <= 0) this.talking = false;
+    }
+  };
+
+  Crab.prototype.interact = function () {
+    this.talking = true;
+    this.talkTimer = 240;
+    this.currentJoke = Game.i18n.getCrabJoke();
+  };
+
+  Crab.prototype.draw = function (c, camX, camY) {
+    var sx = Math.round(this.x - camX);
+    var sy = Math.round(this.y - camY);
+    var leg = Math.sin(this.legPhase) * 2;
+
+    c.save();
+    if (this.dir === -1) {
+      c.translate(sx + this.w / 2, 0);
+      c.scale(-1, 1);
+      sx = -this.w / 2;
+    }
+
+    /* Legs (behind body) – three pairs, alternating sway */
+    c.strokeStyle = '#9a2418';
+    c.lineWidth = 1.5;
+    c.lineCap = 'round';
+    for (var lg = 0; lg < 3; lg++) {
+      var lx = sx + 6 + lg * 4;
+      var lOff = (lg % 2 === 0 ? leg : -leg);
+      /* Left side leg */
+      c.beginPath();
+      c.moveTo(lx - 1, sy + 8);
+      c.lineTo(lx - 4, sy + 13 + lOff);
+      c.stroke();
+      /* Right side leg */
+      c.beginPath();
+      c.moveTo(lx + 1, sy + 8);
+      c.lineTo(lx + 4, sy + 13 - lOff);
+      c.stroke();
+    }
+
+    /* Body shell */
+    c.fillStyle = '#d8442f';
+    c.beginPath();
+    c.ellipse(sx + 11, sy + 7, 10, 6, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Shell highlight */
+    c.fillStyle = '#f1735c';
+    c.beginPath();
+    c.ellipse(sx + 9, sy + 5, 6, 2.4, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Shell speckles */
+    c.fillStyle = '#7a1a10';
+    c.beginPath(); c.arc(sx + 7,  sy + 8, 0.8, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 13, sy + 9, 0.8, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 15, sy + 6, 0.7, 0, Math.PI * 2); c.fill();
+
+    /* Claws – pinched ovals on each side */
+    var clawWiggle = this.talking ? Math.sin(this.timer * 0.4) * 0.6 : 0;
+    c.fillStyle = '#d8442f';
+    c.save();
+    c.translate(sx + 1, sy + 6);
+    c.rotate(-0.4 + clawWiggle);
+    c.beginPath(); c.ellipse(0, 0, 4, 2.6, 0, 0, Math.PI * 2); c.fill();
+    /* Pincer notch */
+    c.fillStyle = '#7a1a10';
+    c.beginPath(); c.moveTo(-3.2, 0); c.lineTo(-1.5, -0.6); c.lineTo(-1.5, 0.6); c.closePath(); c.fill();
+    c.restore();
+    c.fillStyle = '#d8442f';
+    c.save();
+    c.translate(sx + 21, sy + 6);
+    c.rotate(0.4 - clawWiggle);
+    c.beginPath(); c.ellipse(0, 0, 4, 2.6, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#7a1a10';
+    c.beginPath(); c.moveTo(3.2, 0); c.lineTo(1.5, -0.6); c.lineTo(1.5, 0.6); c.closePath(); c.fill();
+    c.restore();
+
+    /* Eye stalks */
+    c.strokeStyle = '#7a1a10';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(sx + 8, sy + 3); c.lineTo(sx + 7, sy);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(sx + 14, sy + 3); c.lineTo(sx + 15, sy);
+    c.stroke();
+    /* Eyes */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(sx + 7, sy, 1.6, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 15, sy, 1.6, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#1a1a1a';
+    c.beginPath(); c.arc(sx + 7, sy, 0.8, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 15, sy, 0.8, 0, Math.PI * 2); c.fill();
+
+    /* Friendly smile */
+    c.strokeStyle = '#7a1a10';
+    c.lineWidth = 0.8;
+    c.beginPath();
+    c.arc(sx + 11, sy + 7, 2, 0.2, Math.PI - 0.2);
+    c.stroke();
+
+    c.restore();
+  };
+
   /* ========== HEART PICKUP ========== */
   function HeartPickup(x, y) {
     this.x = x;
@@ -1677,6 +1845,7 @@
     Oliver: Oliver,
     KittyCorn: KittyCorn,
     Bob: Bob,
+    Crab: Crab,
     Wolfe: Wolfe,
     HeartPickup: HeartPickup,
     Particle: Particle,
