@@ -238,9 +238,11 @@
     c.textAlign = 'center';
     c.fillText(Game.i18n.t('paused'), W / 2, 90);
 
-    /* Floss-dance Momoko – beat tied to a ~1.8Hz square wave so the
-       arms snap on the beat like the real dance. Placed to the left of
-       the menu buttons so she's visible but not competing for space. */
+    /* Floss-dance Momoko – phase advances at ~1.7Hz and the pose math
+       smooths the beat with a tanh sigmoid so she transitions between
+       sides across several frames instead of snapping between two.
+       Placed to the left of the menu buttons so she's visible but not
+       competing for space. */
     if (Game.entities && Game.entities.drawMomokoFloss) {
       c.save();
       c.translate(170, 220);
@@ -501,124 +503,631 @@
     return null;
   }
 
-  /* ---- Customization Screen ---- */
-  var customPresets = [
-    { name: 'presetOcean', hair: '#e06088', suit: '#3366aa', skin: '#ffddbb', flipper: '#33bb77' },
-    { name: 'presetExplorer', hair: '#4a3728', suit: '#444444', skin: '#ddb896', flipper: '#ff8833' },
-    { name: 'presetRainbow', hair: '#ff44cc', suit: '#9933ff', skin: '#ffe0c0', flipper: '#44ddff' },
-    { name: 'presetCoral', hair: '#ff6644', suit: '#cc3366', skin: '#c68c5a', flipper: '#ffaa33' },
-    { name: 'presetNight', hair: '#2244aa', suit: '#1a1a3a', skin: '#8d6e4c', flipper: '#6666cc' },
-  ];
+  /* ---- Customization Screen ----
+     Layout matches the sketch the user's daughter drew:
+       - Title at top
+       - Momoko preview on the left side (live, updates on every change)
+       - Tab bar along the top-right (hair / dress / swim / shoes / crab / food)
+       - 3x2 variant icon grid below the tabs
+       - Color swatches below the grid when the current tab has a color
+       - Start button at the bottom */
   var hairColors = ['#e06088', '#4a3728', '#f5d060', '#4488ff', '#222222', '#cc3333'];
-  var suitColors = ['#3366aa', '#cc3333', '#7733aa', '#228844', '#dd7722', '#cc4488'];
-  var skinTones = ['#ffe0c0', '#ddb896', '#c68c5a', '#8d6e4c', '#5c3d2e'];
+  var suitColors = ['#e06088', '#3366aa', '#cc3333', '#7733aa', '#228844', '#dd7722'];
+  var shoeColors = ['#ff99cc', '#33bb77', '#ffcc44', '#66aaff', '#ffffff', '#552211'];
+  var skinTones  = ['#ffe0c0', '#ddb896', '#c68c5a', '#8d6e4c', '#5c3d2e'];
 
-  var customSelection = { presetIdx: 0 };
+  /* Tab definitions – order matches the sketch. `field` is the key inside
+     Game.customization this tab writes to. `colorField` (optional) enables
+     a color-swatch row below the grid. Icons are drawn by name-dispatch in
+     drawVariantIcon. */
+  var customTabs = [
+    { id: 'hair',  label: 'tabHair',  field: 'hairStyle', colorField: 'hair',    colors: hairColors,
+      variants: [
+        { id: 'twinTails',  label: 'varTwinTails' },
+        { id: 'longBraids', label: 'varLongBraids' },
+        { id: 'buns',       label: 'varBuns' },
+      ] },
+    { id: 'dress', label: 'tabDress', field: 'outfit',    colorField: 'suit',    colors: suitColors,
+      variants: [
+        { id: 'frillyDress', label: 'varFrillyDress' },
+        { id: 'sailorDress', label: 'varSailorDress' },
+        { id: 'starDress',   label: 'varStarDress' },
+      ] },
+    { id: 'swim',  label: 'tabSwim',  field: 'outfit',    colorField: 'suit',    colors: suitColors,
+      variants: [
+        { id: 'sailorSwimsuit', label: 'varSailorSwimsuit' },
+        { id: 'onePiece',       label: 'varOnePiece' },
+        { id: 'frillyBikini',   label: 'varFrillyBikini' },
+      ] },
+    { id: 'shoes', label: 'tabShoes', field: 'shoes',     colorField: 'flipper', colors: shoeColors,
+      variants: [
+        { id: 'maryJane', label: 'varMaryJane' },
+        { id: 'sneaker',  label: 'varSneaker' },
+        { id: 'flipper',  label: 'varFlipper' },
+      ] },
+    { id: 'crab',  label: 'tabCrab',  field: 'crab',      colorField: null, colors: null,
+      variants: [
+        { id: 'none', label: 'varNone' },
+        { id: 'red',  label: 'varCrabRed' },
+        { id: 'blue', label: 'varCrabBlue' },
+        { id: 'gold', label: 'varCrabGold' },
+      ] },
+    { id: 'food',  label: 'tabFood',  field: 'food',      colorField: null, colors: null,
+      variants: [
+        { id: 'none',       label: 'varNone' },
+        { id: 'iceCream',   label: 'varIceCream' },
+        { id: 'onigiri',    label: 'varOnigiri' },
+        { id: 'donut',      label: 'varDonut' },
+        { id: 'crepe',      label: 'varCrepe' },
+        { id: 'taiyaki',    label: 'varTaiyaki' },
+        { id: 'parfait',    label: 'varParfait' },
+        { id: 'macaron',    label: 'varMacaron' },
+        { id: 'strawberry', label: 'varStrawberry' },
+      ] },
+  ];
+
+  var customSelection = { tab: 'hair' };
+
+  /* ---- Layout constants (shared by draw + hit-test) ----
+     Grid is sized for up to 3 rows × 3 cols so the 9-variant food tab
+     fits without scrolling. Colors + skin sit below at fixed Y so the
+     layout stays stable when switching tabs. */
+  var TAB_X = 320, TAB_Y = 60, TAB_W = 76, TAB_H = 34, TAB_GAP = 4;
+  var GRID_X = 320, GRID_Y = 100, GRID_COLS = 3, GRID_TILE_W = 146, GRID_TILE_H = 58, GRID_GAP = 6;
+  var COLOR_X = 320, COLOR_STEP = 42;
+  var START_BTN_W = 200, START_BTN_H = 46;
+  var START_BTN_X = W / 2 - START_BTN_W / 2 + 150;
+  var START_BTN_Y = 420;
+
+  function getTab(id) {
+    for (var i = 0; i < customTabs.length; i++) if (customTabs[i].id === id) return customTabs[i];
+    return customTabs[0];
+  }
+
+  /* Where the color-swatch row anchors for this tab. Sits just below the
+     active grid so tabs with fewer variants (e.g. hair) don't leave a
+     gap. Used by both the draw pass and the hit-test. */
+  function colorYFor(tab) {
+    var rows = Math.max(1, Math.ceil(tab.variants.length / GRID_COLS));
+    return GRID_Y + rows * (GRID_TILE_H + GRID_GAP) + 12;
+  }
+
+  /* Tile icon for a variant. Keeps per-tile drawing small and iconic so
+     the 6 tiles visually contrast even when they share the same tab. */
+  function drawVariantIcon(c, tabId, variantId, cx, cy, cust) {
+    c.save();
+    c.translate(cx, cy);
+    if (tabId === 'hair') drawHairIcon(c, variantId, cust.hair);
+    else if (tabId === 'dress' || tabId === 'swim') drawOutfitIcon(c, variantId, cust.suit);
+    else if (tabId === 'shoes') drawShoeIcon(c, variantId, cust.flipper);
+    else if (tabId === 'crab') drawCrabIcon(c, variantId);
+    else if (tabId === 'food') drawFoodIcon(c, variantId);
+    c.restore();
+  }
+
+  function drawHairIcon(c, id, hairC) {
+    var color = hairC || '#e06088';
+    /* Tiny head */
+    c.fillStyle = '#ffddbb';
+    c.beginPath(); c.arc(0, 4, 10, 0, Math.PI * 2); c.fill();
+    if (id === 'longBraids') {
+      c.fillStyle = color;
+      for (var side = -1; side <= 1; side += 2) {
+        for (var b = 0; b < 3; b++) {
+          c.beginPath();
+          c.ellipse(side * 10, -4 + b * 7, 3.4, 3.8, 0, 0, Math.PI * 2);
+          c.fill();
+        }
+      }
+      /* Top */
+      c.beginPath();
+      c.ellipse(0, -6, 12, 6, 0, Math.PI, 0);
+      c.fill();
+    } else if (id === 'buns') {
+      c.fillStyle = color;
+      c.beginPath(); c.arc(-8, -8, 5, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(8, -8, 5, 0, Math.PI * 2); c.fill();
+      c.beginPath();
+      c.ellipse(0, -2, 11, 5, 0, Math.PI, 0);
+      c.fill();
+    } else {
+      /* twinTails */
+      c.fillStyle = color;
+      c.beginPath();
+      c.ellipse(-11, 4, 4, 10, 0.1, 0, Math.PI * 2);
+      c.fill();
+      c.beginPath();
+      c.ellipse(11, 4, 4, 10, -0.1, 0, Math.PI * 2);
+      c.fill();
+      c.beginPath();
+      c.ellipse(0, -4, 12, 7, 0, Math.PI, 0);
+      c.fill();
+    }
+  }
+
+  function drawOutfitIcon(c, id, suitC) {
+    var color = suitC || '#e06088';
+    if (id === 'frillyDress' || id === 'sailorDress' || id === 'starDress') {
+      /* Bodice */
+      c.fillStyle = color;
+      c.beginPath();
+      c.moveTo(-10, -12);
+      c.quadraticCurveTo(0, -14, 10, -12);
+      c.lineTo(8, -2);
+      c.lineTo(-8, -2);
+      c.closePath();
+      c.fill();
+      /* Skirt */
+      c.beginPath();
+      c.moveTo(-8, -2);
+      c.lineTo(-14, 14);
+      c.lineTo(14, 14);
+      c.lineTo(8, -2);
+      c.closePath();
+      c.fill();
+      if (id === 'starDress') {
+        /* Gold bow on chest */
+        c.fillStyle = '#ffd24a';
+        c.beginPath(); c.ellipse(-2.4, -8, 2, 1.6, -0.3, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.ellipse( 2.4, -8, 2, 1.6,  0.3, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#c88a1a';
+        c.beginPath(); c.arc(0, -8, 0.9, 0, Math.PI * 2); c.fill();
+        /* Stars on skirt */
+        c.fillStyle = '#ffd24a';
+        var iconStar = function (sx, sy, r) {
+          c.beginPath();
+          for (var k = 0; k < 10; k++) {
+            var ang = -Math.PI / 2 + k * Math.PI / 5;
+            var rr = k % 2 === 0 ? r : r * 0.4;
+            var px = sx + Math.cos(ang) * rr;
+            var py = sy + Math.sin(ang) * rr;
+            if (k === 0) c.moveTo(px, py); else c.lineTo(px, py);
+          }
+          c.closePath(); c.fill();
+        };
+        iconStar(-6,  6, 1.3);
+        iconStar( 0, 10, 1.4);
+        iconStar( 6,  6, 1.3);
+        /* Silver hem */
+        c.strokeStyle = '#ffffff';
+        c.lineWidth = 0.8;
+        c.beginPath();
+        c.moveTo(-14, 14); c.lineTo(14, 14);
+        c.stroke();
+      } else {
+        /* Scalloped hem */
+        c.fillStyle = '#ffffff';
+        for (var s = -2; s <= 2; s++) {
+          c.beginPath(); c.arc(s * 5, 15, 2.2, Math.PI, 0); c.fill();
+        }
+        if (id === 'frillyDress') {
+          /* Heart gem */
+          c.fillStyle = '#ff5577';
+          c.beginPath();
+          c.arc(-1.4, -8, 1.3, 0, Math.PI * 2);
+          c.arc(1.4, -8, 1.3, 0, Math.PI * 2);
+          c.moveTo(-2.6, -7);
+          c.lineTo(0, -4);
+          c.lineTo(2.6, -7);
+          c.closePath();
+          c.fill();
+        } else {
+          /* Sailor collar */
+          c.fillStyle = '#ffffff';
+          c.beginPath();
+          c.moveTo(-8, -13);
+          c.lineTo(0, -6);
+          c.lineTo(8, -13);
+          c.closePath();
+          c.fill();
+        }
+      }
+    } else if (id === 'frillyBikini') {
+      /* Bandeau top */
+      c.fillStyle = color;
+      c.fillRect(-10, -12, 20, 5);
+      c.fillStyle = '#ffffff';
+      for (var fbk = 0; fbk < 5; fbk++) {
+        c.beginPath();
+        c.arc(-8 + fbk * 4, -7, 1.8, Math.PI, 0);
+        c.fill();
+      }
+      /* Center bow */
+      c.fillStyle = '#ffd24a';
+      c.beginPath(); c.ellipse(-1.8, -10, 1.5, 1.2, -0.3, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.ellipse( 1.8, -10, 1.5, 1.2,  0.3, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#c88a1a';
+      c.beginPath(); c.arc(0, -10, 0.6, 0, Math.PI * 2); c.fill();
+      /* Bikini bottom */
+      c.fillStyle = color;
+      c.beginPath();
+      c.moveTo(-10, 2);
+      c.quadraticCurveTo(0, 5, 10, 2);
+      c.lineTo(8, 10);
+      c.lineTo(-8, 10);
+      c.closePath();
+      c.fill();
+      /* Side bow */
+      c.fillStyle = '#ffd24a';
+      c.beginPath(); c.ellipse(8, 5, 1.6, 1.1, -0.4, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.ellipse(10, 6, 1.6, 1.1,  0.4, 0, Math.PI * 2); c.fill();
+    } else if (id === 'sailorSwimsuit') {
+      /* Torso */
+      c.fillStyle = color;
+      c.fillRect(-10, -12, 20, 20);
+      /* Sailor collar */
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.moveTo(-9, -12);
+      c.lineTo(0, -2);
+      c.lineTo(9, -12);
+      c.closePath();
+      c.fill();
+      /* Bow */
+      c.fillStyle = '#ff4466';
+      c.beginPath(); c.arc(0, -2, 1.8, 0, Math.PI * 2); c.fill();
+    } else if (id === 'onePiece') {
+      c.fillStyle = color;
+      c.beginPath();
+      c.moveTo(-9, -12);
+      c.quadraticCurveTo(0, -14, 9, -12);
+      c.lineTo(9, 10);
+      c.quadraticCurveTo(0, 12, -9, 10);
+      c.closePath();
+      c.fill();
+      /* Star */
+      c.fillStyle = '#fff4a8';
+      var ss = 3;
+      c.beginPath();
+      for (var i = 0; i < 10; i++) {
+        var ang = -Math.PI / 2 + i * Math.PI / 5;
+        var rr = i % 2 === 0 ? ss : ss * 0.4;
+        var px = Math.cos(ang) * rr;
+        var py = Math.sin(ang) * rr;
+        if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+      }
+      c.closePath();
+      c.fill();
+    }
+  }
+
+  function drawShoeIcon(c, id, shoeC) {
+    var color = shoeC || '#ff99cc';
+    if (id === 'flipper') {
+      c.fillStyle = color;
+      c.beginPath();
+      c.ellipse(0, 0, 14, 7, 0, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = 'rgba(0,0,0,0.15)';
+      c.beginPath();
+      c.ellipse(-5, -1, 4, 2, 0, 0, Math.PI * 2);
+      c.fill();
+    } else if (id === 'sneaker') {
+      c.fillStyle = color;
+      c.fillRect(-12, -5, 24, 8);
+      c.fillStyle = '#ffffff';
+      c.fillRect(-12, 3, 24, 2.5);
+      c.fillStyle = 'rgba(255,255,255,0.5)';
+      c.fillRect(-10, -4, 6, 1);
+      c.fillRect(-2, -4, 6, 1);
+    } else {
+      /* maryJane */
+      c.fillStyle = color;
+      c.beginPath();
+      c.ellipse(0, 1, 14, 7, 0, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = 'rgba(0,0,0,0.35)';
+      c.lineWidth = 1.6;
+      c.beginPath();
+      c.moveTo(-8, -3);
+      c.lineTo(8, -3);
+      c.stroke();
+      c.fillStyle = '#fff4aa';
+      c.beginPath(); c.arc(0, -3, 1.6, 0, Math.PI * 2); c.fill();
+    }
+  }
+
+  function drawCrabIcon(c, id) {
+    if (id === 'none') {
+      c.strokeStyle = '#88aacc';
+      c.lineWidth = 2;
+      c.beginPath(); c.arc(0, 0, 10, 0, Math.PI * 2); c.stroke();
+      c.beginPath();
+      c.moveTo(-7, -7);
+      c.lineTo(7, 7);
+      c.stroke();
+      return;
+    }
+    if (Game.entities && Game.entities.drawCrabPet) {
+      c.save();
+      c.scale(2.2, 2.2);
+      Game.entities.drawCrabPet(c, 0, 0, id, 0);
+      c.restore();
+    }
+  }
+
+  function drawFoodIcon(c, id) {
+    if (id === 'none') {
+      c.strokeStyle = '#88aacc';
+      c.lineWidth = 2;
+      c.beginPath(); c.arc(0, 0, 10, 0, Math.PI * 2); c.stroke();
+      c.beginPath();
+      c.moveTo(-7, -7);
+      c.lineTo(7, 7);
+      c.stroke();
+      return;
+    }
+    c.save();
+    c.scale(2.8, 2.8);
+    if (id === 'iceCream') {
+      c.fillStyle = '#e0b070';
+      c.beginPath();
+      c.moveTo(-1.5, 2);
+      c.lineTo(1.5, 2);
+      c.lineTo(0, 6);
+      c.closePath();
+      c.fill();
+      c.fillStyle = '#ffc8d4';
+      c.beginPath(); c.arc(0, 1, 2.4, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ff3355';
+      c.beginPath(); c.arc(0, -1.5, 0.75, 0, Math.PI * 2); c.fill();
+    } else if (id === 'onigiri') {
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.moveTo(0, -3);
+      c.lineTo(-3.5, 3);
+      c.lineTo(3.5, 3);
+      c.closePath();
+      c.fill();
+      c.fillStyle = '#2a3a2a';
+      c.fillRect(-3, 1, 6, 2);
+      c.fillStyle = 'rgba(255,160,180,0.7)';
+      c.beginPath(); c.arc(-1.1, 0, 0.55, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(1.1, 0, 0.55, 0, Math.PI * 2); c.fill();
+    } else if (id === 'donut') {
+      c.fillStyle = '#c88858';
+      c.beginPath(); c.arc(0, 0, 3, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ff99cc';
+      c.beginPath(); c.arc(0, 0, 2.7, Math.PI + 0.3, -0.3, false); c.fill();
+      c.fillStyle = '#ffe4b0';
+      c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ffff66'; c.fillRect(-1.4, -0.3, 0.5, 0.5);
+      c.fillStyle = '#66ddff'; c.fillRect(1, 0, 0.5, 0.5);
+    } else if (id === 'crepe') {
+      c.fillStyle = '#f2d8a4';
+      c.beginPath();
+      c.moveTo(-2.6, -2.6);
+      c.lineTo(2.6, -2.6);
+      c.lineTo(0, 4);
+      c.closePath();
+      c.fill();
+      c.fillStyle = '#ffdceb';
+      c.beginPath(); c.arc(0, -2.6, 2, Math.PI, 0); c.fill();
+      c.fillStyle = '#dd3355';
+      c.beginPath(); c.arc(-0.4, -3, 0.8, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#2a5d2a';
+      c.fillRect(-0.7, -3.8, 0.6, 0.6);
+    } else if (id === 'taiyaki') {
+      c.fillStyle = '#cc8844';
+      c.beginPath();
+      c.ellipse(-0.4, 0, 3.4, 1.8, 0, 0, Math.PI * 2);
+      c.fill();
+      c.beginPath();
+      c.moveTo(2.6, 0);
+      c.lineTo(4.4, -1.6);
+      c.lineTo(4.4, 1.6);
+      c.closePath();
+      c.fill();
+      c.fillStyle = '#e0a868';
+      c.beginPath(); c.ellipse(-1, -0.6, 1.6, 0.5, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#1a0c14';
+      c.beginPath(); c.arc(-2.2, -0.4, 0.4, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#8a5520';
+      c.lineWidth = 0.3;
+      c.beginPath();
+      c.moveTo(-1.4, 0.3); c.lineTo(1.6, 0.3);
+      c.stroke();
+    } else if (id === 'parfait') {
+      c.strokeStyle = 'rgba(255,255,255,0.7)';
+      c.lineWidth = 0.4;
+      c.strokeRect(-1.8, -2, 3.6, 5.6);
+      c.fillStyle = '#6b3a1a';
+      c.fillRect(-1.6, 2, 3.2, 1.4);
+      c.fillStyle = '#fff4dc';
+      c.fillRect(-1.6, 0.5, 3.2, 1.4);
+      c.fillStyle = '#ff6688';
+      c.fillRect(-1.6, -1, 3.2, 1.4);
+      c.fillStyle = '#ffffff';
+      c.beginPath(); c.arc(0, -2.3, 1.5, Math.PI, 0); c.fill();
+      c.beginPath(); c.arc(-0.5, -2.9, 0.8, Math.PI, 0); c.fill();
+      c.beginPath(); c.arc(0.4, -3.2, 0.6, Math.PI, 0); c.fill();
+      c.fillStyle = '#dd2244';
+      c.beginPath(); c.arc(0.7, -3.5, 0.55, 0, Math.PI * 2); c.fill();
+    } else if (id === 'macaron') {
+      c.fillStyle = '#ffbadb';
+      c.beginPath(); c.ellipse(0, -1.2, 3, 1.4, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ffffff';
+      c.fillRect(-3, -0.3, 6, 1.1);
+      c.fillStyle = '#ff9ac2';
+      c.beginPath(); c.ellipse(0, 1.6, 3, 1.4, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.55)';
+      c.beginPath(); c.ellipse(-1, -1.5, 1.3, 0.4, 0, 0, Math.PI * 2); c.fill();
+    } else if (id === 'strawberry') {
+      c.fillStyle = '#e8344a';
+      c.beginPath();
+      c.moveTo(-2.6, -1.2);
+      c.quadraticCurveTo(0, 4.8, 2.6, -1.2);
+      c.closePath();
+      c.fill();
+      c.fillStyle = '#fff4a8';
+      c.beginPath(); c.arc(-1, 0.7, 0.3, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(0.8, 0.4, 0.3, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(0, 2, 0.3, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(-1.4, 2.3, 0.3, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#3caf3c';
+      c.beginPath();
+      c.moveTo(-2.8, -1.2);
+      c.lineTo(-0.8, -2.2);
+      c.lineTo(0.8, -2.2);
+      c.lineTo(2.8, -1.2);
+      c.lineTo(0, -0.3);
+      c.closePath();
+      c.fill();
+    }
+    c.restore();
+  }
 
   function drawCustomizeScreen(c) {
+    /* Background */
     var grad = c.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, '#0a1628');
     grad.addColorStop(1, '#162e50');
     c.fillStyle = grad;
     c.fillRect(0, 0, W, H);
 
+    /* Title */
     c.fillStyle = '#66ccff';
     c.font = 'bold 26px monospace';
     c.textAlign = 'center';
     c.fillText(Game.i18n.t('customize'), W / 2, 36);
 
-    /* --- Momoko preview (left side) --- */
-    var previewX = 160, previewY = 200;
+    /* Preview stage – soft radial glow so Momoko pops against the bg */
+    var stageCX = 160, stageCY = 240;
+    var stageGrad = c.createRadialGradient(stageCX, stageCY, 20, stageCX, stageCY, 150);
+    stageGrad.addColorStop(0, 'rgba(110,180,255,0.22)');
+    stageGrad.addColorStop(1, 'rgba(110,180,255,0)');
+    c.fillStyle = stageGrad;
+    c.fillRect(10, 70, 300, 340);
+
+    /* Momoko preview */
     c.save();
-    c.translate(previewX, previewY);
-    c.scale(4, 4);
+    c.translate(stageCX - 70, stageCY - 85);
+    c.scale(5, 5);
     drawMomokoPreview(c, Game.customization);
     c.restore();
 
-    /* --- Right side controls --- */
-    var rx = 360, ry = 58;
+    /* Tab bar */
+    for (var ti = 0; ti < customTabs.length; ti++) {
+      var tx = TAB_X + ti * (TAB_W + TAB_GAP);
+      var tab = customTabs[ti];
+      var active = customSelection.tab === tab.id;
+      c.fillStyle = active ? '#3388cc' : '#1a3a5a';
+      roundRect(c, tx, TAB_Y, TAB_W, TAB_H, 6);
+      c.fill();
+      if (active) {
+        c.strokeStyle = '#ffdd88';
+        c.lineWidth = 2;
+        roundRect(c, tx, TAB_Y, TAB_W, TAB_H, 6);
+        c.stroke();
+      }
+      c.fillStyle = active ? '#ffffff' : '#aaccee';
+      c.font = 'bold 11px monospace';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(Game.i18n.t(tab.label), tx + TAB_W / 2, TAB_Y + TAB_H / 2);
+    }
+    c.textBaseline = 'alphabetic';
 
-    /* Presets */
-    c.fillStyle = '#88aacc';
-    c.font = '14px monospace';
-    c.textAlign = 'left';
-    c.fillText(Game.i18n.t('presets'), rx, ry);
-    ry += 8;
-    for (var pi = 0; pi < customPresets.length; pi++) {
-      var px = rx + pi * 82;
-      var selected = customSelection.presetIdx === pi;
-      c.fillStyle = selected ? '#225588' : '#112244';
-      roundRect(c, px, ry, 76, 40, 6);
+    /* Variant grid for the active tab */
+    var activeTab = getTab(customSelection.tab);
+    var currentVariantId = Game.customization[activeTab.field];
+    for (var vi = 0; vi < activeTab.variants.length; vi++) {
+      var row = Math.floor(vi / GRID_COLS);
+      var col = vi % GRID_COLS;
+      var gx = GRID_X + col * (GRID_TILE_W + GRID_GAP);
+      var gy = GRID_Y + row * (GRID_TILE_H + GRID_GAP);
+      var v = activeTab.variants[vi];
+      var selected = v.id === currentVariantId;
+      /* Tile bg */
+      c.fillStyle = selected ? '#2b5580' : '#12253d';
+      roundRect(c, gx, gy, GRID_TILE_W, GRID_TILE_H, 8);
       c.fill();
       if (selected) {
-        c.strokeStyle = '#ffffff';
-        c.lineWidth = 2;
-        roundRect(c, px, ry, 76, 40, 6);
+        c.strokeStyle = '#ffdd88';
+        c.lineWidth = 2.5;
+        roundRect(c, gx, gy, GRID_TILE_W, GRID_TILE_H, 8);
         c.stroke();
       }
-      c.fillStyle = customPresets[pi].hair;
-      c.beginPath(); c.arc(px + 14, ry + 16, 6, 0, Math.PI * 2); c.fill();
-      c.fillStyle = customPresets[pi].suit;
-      c.beginPath(); c.arc(px + 30, ry + 16, 6, 0, Math.PI * 2); c.fill();
-      c.fillStyle = customPresets[pi].skin;
-      c.beginPath(); c.arc(px + 46, ry + 16, 6, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#ccddee';
-      c.font = '9px monospace';
-      c.textAlign = 'center';
-      c.fillText(Game.i18n.t(customPresets[pi].name), px + 38, ry + 35);
+      /* Icon (left side of tile) */
+      drawVariantIcon(c, activeTab.id, v.id, gx + 32, gy + GRID_TILE_H / 2 - 2, Game.customization);
+      /* Label (right side) */
+      c.fillStyle = '#eef6ff';
+      c.font = 'bold 12px monospace';
       c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.fillText(Game.i18n.t(v.label), gx + 64, gy + GRID_TILE_H / 2);
     }
-    ry += 56;
+    c.textBaseline = 'alphabetic';
 
-    /* Hair colors */
+    /* Color swatches (when the active tab has a color dimension) */
+    /* Color row anchor follows the grid so tabs with fewer variants pull
+       the colors up instead of leaving a big empty band. */
+    var colorY = colorYFor(activeTab);
+    if (activeTab.colorField && activeTab.colors) {
+      var labelKey = activeTab.colorField === 'hair' ? 'hairColor'
+                   : activeTab.colorField === 'suit' ? 'suitColor'
+                   : 'skinTone';
+      c.fillStyle = '#88aacc';
+      c.font = '13px monospace';
+      c.textAlign = 'left';
+      c.fillText(Game.i18n.t(labelKey), COLOR_X, colorY - 8);
+      var selColor = Game.customization[activeTab.colorField];
+      for (var ci = 0; ci < activeTab.colors.length; ci++) {
+        var ccx = COLOR_X + ci * COLOR_STEP + 16;
+        var ccy = colorY + 16;
+        c.fillStyle = activeTab.colors[ci];
+        c.beginPath();
+        c.arc(ccx, ccy, 14, 0, Math.PI * 2);
+        c.fill();
+        c.strokeStyle = 'rgba(0,0,0,0.35)';
+        c.lineWidth = 1;
+        c.stroke();
+        if (activeTab.colors[ci] === selColor) {
+          c.strokeStyle = '#ffdd88';
+          c.lineWidth = 3;
+          c.beginPath();
+          c.arc(ccx, ccy, 17, 0, Math.PI * 2);
+          c.stroke();
+        }
+      }
+    }
+
+    /* Skin tones – always visible regardless of tab (it's the only axis
+       that doesn't belong to a category but still matters) */
     c.fillStyle = '#88aacc';
-    c.font = '14px monospace';
-    c.fillText(Game.i18n.t('hairColor'), rx, ry);
-    ry += 8;
-    drawColorRow(c, rx, ry, hairColors, Game.customization.hair);
-    ry += 42;
-
-    /* Suit colors */
-    c.fillStyle = '#88aacc';
-    c.font = '14px monospace';
-    c.fillText(Game.i18n.t('suitColor'), rx, ry);
-    ry += 8;
-    drawColorRow(c, rx, ry, suitColors, Game.customization.suit);
-    ry += 42;
-
-    /* Skin tones */
-    c.fillStyle = '#88aacc';
-    c.font = '14px monospace';
-    c.fillText(Game.i18n.t('skinTone'), rx, ry);
-    ry += 8;
-    drawColorRow(c, rx, ry, skinTones, Game.customization.skin);
-    ry += 52;
-
-    /* Start button */
-    drawButton(c, Game.i18n.t('startGame'), W / 2 + 80, ry, 180, 48);
-  }
-
-  function drawColorRow(c, x, y, colors, selected) {
-    for (var i = 0; i < colors.length; i++) {
-      var cx = x + i * 44 + 16;
-      var cy = y + 16;
-      c.fillStyle = colors[i];
+    c.font = '13px monospace';
+    c.textAlign = 'left';
+    c.fillText(Game.i18n.t('skinTone'), COLOR_X, colorY + 48);
+    for (var ki = 0; ki < skinTones.length; ki++) {
+      var kcx = COLOR_X + ki * COLOR_STEP + 16;
+      var kcy = colorY + 68;
+      c.fillStyle = skinTones[ki];
       c.beginPath();
-      c.arc(cx, cy, 14, 0, Math.PI * 2);
+      c.arc(kcx, kcy, 14, 0, Math.PI * 2);
       c.fill();
-      if (colors[i] === selected) {
-        c.strokeStyle = '#ffffff';
+      c.strokeStyle = 'rgba(0,0,0,0.35)';
+      c.lineWidth = 1;
+      c.stroke();
+      if (skinTones[ki] === Game.customization.skin) {
+        c.strokeStyle = '#ffdd88';
         c.lineWidth = 3;
         c.beginPath();
-        c.arc(cx, cy, 17, 0, Math.PI * 2);
+        c.arc(kcx, kcy, 17, 0, Math.PI * 2);
         c.stroke();
       }
     }
+
+    /* Start button */
+    drawButton(c, Game.i18n.t('startGame'), START_BTN_X, START_BTN_Y, START_BTN_W, START_BTN_H);
   }
 
   function drawMomokoPreview(c, cust) {
-    if (Game.entities && Game.entities.drawMomokoSprite) {
-      Game.entities.drawMomokoSprite(c, 0, 0, cust, 0);
+    if (!Game.entities) return;
+    if (Game.entities.drawMomokoSprite) Game.entities.drawMomokoSprite(c, 0, 0, cust, 0);
+    /* Crab pet appears next to her feet in the preview so the player can
+       see the companion they just picked. */
+    if (Game.entities.drawCrabPet && cust.crab && cust.crab !== 'none') {
+      Game.entities.drawCrabPet(c, -8, 32, cust.crab, 0);
     }
   }
 
@@ -637,68 +1146,60 @@
   }
 
   function handleCustomizeClick(mx, my) {
-    var rx = 360, ry = 66;
-
-    /* Presets */
-    for (var pi = 0; pi < customPresets.length; pi++) {
-      var px = rx + pi * 82;
-      if (hitButton(mx, my, px, ry, 76, 40)) {
-        customSelection.presetIdx = pi;
-        var p = customPresets[pi];
-        Game.customization.hair = p.hair;
-        Game.customization.suit = p.suit;
-        Game.customization.skin = p.skin;
-        Game.customization.flipper = p.flipper;
+    /* Tab bar */
+    for (var ti = 0; ti < customTabs.length; ti++) {
+      var tx = TAB_X + ti * (TAB_W + TAB_GAP);
+      if (hitButton(mx, my, tx, TAB_Y, TAB_W, TAB_H)) {
+        customSelection.tab = customTabs[ti].id;
         Game.audio.play('select');
         return null;
       }
     }
-    ry += 56;
 
-    /* Hair */
-    ry += 22;
-    for (var hi = 0; hi < hairColors.length; hi++) {
-      var hcx = rx + hi * 44 + 16;
-      var hcy = ry - 6;
-      if (Math.sqrt((mx - hcx) * (mx - hcx) + (my - hcy) * (my - hcy)) < 17) {
-        Game.customization.hair = hairColors[hi];
-        customSelection.presetIdx = -1;
+    var activeTab = getTab(customSelection.tab);
+
+    /* Variant tiles */
+    for (var vi = 0; vi < activeTab.variants.length; vi++) {
+      var row = Math.floor(vi / GRID_COLS);
+      var col = vi % GRID_COLS;
+      var gx = GRID_X + col * (GRID_TILE_W + GRID_GAP);
+      var gy = GRID_Y + row * (GRID_TILE_H + GRID_GAP);
+      if (hitButton(mx, my, gx, gy, GRID_TILE_W, GRID_TILE_H)) {
+        Game.customization[activeTab.field] = activeTab.variants[vi].id;
         Game.audio.play('select');
         return null;
       }
     }
-    ry += 20;
 
-    /* Suit */
-    ry += 22;
-    for (var si = 0; si < suitColors.length; si++) {
-      var scx = rx + si * 44 + 16;
-      var scy = ry - 6;
-      if (Math.sqrt((mx - scx) * (mx - scx) + (my - scy) * (my - scy)) < 17) {
-        Game.customization.suit = suitColors[si];
-        customSelection.presetIdx = -1;
-        Game.audio.play('select');
-        return null;
+    /* Tab color swatches */
+    var colorY = colorYFor(activeTab);
+    if (activeTab.colorField && activeTab.colors) {
+      for (var ci = 0; ci < activeTab.colors.length; ci++) {
+        var ccx = COLOR_X + ci * COLOR_STEP + 16;
+        var ccy = colorY + 16;
+        var dx = mx - ccx, dy = my - ccy;
+        if (dx * dx + dy * dy < 17 * 17) {
+          Game.customization[activeTab.colorField] = activeTab.colors[ci];
+          Game.audio.play('select');
+          return null;
+        }
       }
     }
-    ry += 20;
 
-    /* Skin */
-    ry += 22;
+    /* Skin tone swatches (always shown) */
     for (var ki = 0; ki < skinTones.length; ki++) {
-      var kcx = rx + ki * 44 + 16;
-      var kcy = ry - 6;
-      if (Math.sqrt((mx - kcx) * (mx - kcx) + (my - kcy) * (my - kcy)) < 17) {
+      var kcx = COLOR_X + ki * COLOR_STEP + 16;
+      var kcy = colorY + 68;
+      var kdx = mx - kcx, kdy = my - kcy;
+      if (kdx * kdx + kdy * kdy < 17 * 17) {
         Game.customization.skin = skinTones[ki];
-        customSelection.presetIdx = -1;
         Game.audio.play('select');
         return null;
       }
     }
-    ry += 52;
 
     /* Start button */
-    if (hitButton(mx, my, W / 2 + 80, ry, 180, 48)) {
+    if (hitButton(mx, my, START_BTN_X, START_BTN_Y, START_BTN_W, START_BTN_H)) {
       Game.audio.play('select');
       return 'start';
     }
@@ -900,10 +1401,59 @@
     };
   }
 
+  /* Player-controlled Momoko state while the beach cutscene is up. She
+     walks on the sand line between the palms; action key does a small
+     hop. Position is in canvas-logical (0..W,0..H) coords. */
+  var beachMomoko = null;
+  var BEACH_GROUND_Y = H * 0.84;
+  var BEACH_MIN_X = 60;
+  var BEACH_MAX_X = W - 60;
+  var BEACH_WALK_SPEED = 2.6;
+  var BEACH_JUMP_V = -5.2;
+  var BEACH_GRAVITY = 0.32;
+
   function startBeachCutscene() {
     beachTimer = 0;
     beachKitty = null;
     beachScene = makeBeachScene();
+    beachMomoko = {
+      x: W / 2,
+      y: BEACH_GROUND_Y,
+      vy: 0,
+      facing: 1,
+      walkPhase: 0,
+      grounded: true,
+      moving: false,
+    };
+  }
+
+  /* Called from engine.js every frame while State.BEACH is active. `keys`
+     and `jp` are the shared Game.input state. */
+  function updateBeach(keys, jp) {
+    if (!beachMomoko) return;
+    var m = beachMomoko;
+    m.moving = false;
+    if (keys.left)  { m.x -= BEACH_WALK_SPEED; m.facing = -1; m.moving = true; }
+    if (keys.right) { m.x += BEACH_WALK_SPEED; m.facing =  1; m.moving = true; }
+    if (m.x < BEACH_MIN_X) m.x = BEACH_MIN_X;
+    if (m.x > BEACH_MAX_X) m.x = BEACH_MAX_X;
+
+    /* Hop on action (space / BUBBLE). Uses justPressed so holding the
+       key doesn't auto-bounce. */
+    if (jp && jp.action && m.grounded) {
+      m.vy = BEACH_JUMP_V;
+      m.grounded = false;
+    }
+    /* Gravity + ground clamp */
+    m.vy += BEACH_GRAVITY;
+    m.y += m.vy;
+    if (m.y >= BEACH_GROUND_Y) {
+      m.y = BEACH_GROUND_Y;
+      m.vy = 0;
+      m.grounded = true;
+    }
+
+    if (m.moving && m.grounded) m.walkPhase += 0.35;
   }
 
   function drawPalmTree(c, x, groundY, scale, sway) {
@@ -1441,6 +1991,39 @@
       c.fill();
     }
 
+    /* Player-controlled Momoko walking on the sand. Drawn after sand /
+       decor and before Kitty so she sits in the natural z-order. Scaled
+       2x so she matches the size of kids / beach props. The sprite's
+       animFrame parameter drives her flipper/foot kick timing. */
+    if (beachMomoko) {
+      var mm = beachMomoko;
+      /* Shadow on sand */
+      c.save();
+      c.fillStyle = 'rgba(0,0,0,0.22)';
+      var shadowSquash = mm.grounded ? 1 : 0.6;
+      c.beginPath();
+      c.ellipse(mm.x, BEACH_GROUND_Y + 10, 16 * shadowSquash, 4 * shadowSquash, 0, 0, Math.PI * 2);
+      c.fill();
+      c.restore();
+
+      c.save();
+      c.translate(mm.x, mm.y);
+      c.scale(2, 2);
+      if (mm.facing === -1) c.scale(-1, 1);
+      /* The sprite's natural origin is its top-left, so shift up by full
+         sprite height (34) to plant feet on the ground line. */
+      if (Game.entities && Game.entities.drawMomokoSprite) {
+        var frame = mm.moving ? Math.floor(mm.walkPhase) : 0;
+        Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, frame);
+      }
+      /* Companion crab trails behind her opposite facing direction */
+      if (Game.entities && Game.entities.drawCrabPet &&
+          Game.customization.crab && Game.customization.crab !== 'none') {
+        Game.entities.drawCrabPet(c, -22, -2, Game.customization.crab, beachTimer);
+      }
+      c.restore();
+    }
+
     /* Kitty Corn splashing at shore */
     if (!beachKitty && Game.entities && Game.entities.KittyCorn) {
       beachKitty = new Game.entities.KittyCorn(420, H * 0.9);
@@ -1553,6 +2136,7 @@
     drawIntroScreen: drawIntroScreen,
     drawBeachCutscene: drawBeachCutscene,
     startBeachCutscene: startBeachCutscene,
+    updateBeach: updateBeach,
     handleTitleClick: handleTitleClick,
     handlePauseClick: handlePauseClick,
     handleGameOverClick: handleGameOverClick,

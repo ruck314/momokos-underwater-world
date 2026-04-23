@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.3.0';
+  Game.VERSION = 'v1.4.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -46,12 +46,20 @@
   var state = State.TITLE;
   var prevState = null;
 
-  /* ---- Customization defaults ---- */
+  /* ---- Customization defaults ----
+     Split across two concerns: tintable colors (hair/suit/skin/flipper) and
+     swappable variants (hairStyle/outfit/shoes/crab/food). Variants are
+     strings that the sprite painter branches on; 'none' means skip. */
   Game.customization = {
     hair: '#e06088',
-    suit: '#3366aa',
+    suit: '#e06088',
     skin: '#ffddbb',
-    flipper: '#33bb77',
+    flipper: '#ff99cc',
+    hairStyle: 'twinTails',
+    outfit: 'frillyDress',
+    shoes: 'maryJane',
+    crab: 'none',
+    food: 'none',
   };
 
   /* ---- Camera ---- */
@@ -340,18 +348,18 @@
           if (!boss.hasChallenged && boss.timer > 20) {
             boss.hasChallenged = true;
             boss.hasTaunted = true;
-            boss.dialogueQueue.push({ speaker: 'Momoko', text: Game.i18n.t('heroChallenge'), duration: 110 });
-            boss.dialogueQueue.push({ speaker: 'Moni',   text: Game.i18n.t('moniTaunt1'),    duration: 110 });
+            boss.dialogueQueue.push({ speaker: 'Momoko', text: Game.i18n.t('heroChallenge'), duration: 260 });
+            boss.dialogueQueue.push({ speaker: 'Moni',   text: Game.i18n.t('moniTaunt1'),    duration: 260 });
           }
           /* Mid-fight taunt at ~75% HP */
           if (!boss.hasTaunted3 && !boss.defeated && boss.hp <= boss.maxHp * 0.75) {
             boss.hasTaunted3 = true;
-            boss.dialogueQueue.push({ speaker: 'Moni', text: Game.i18n.t('moniTaunt3'), duration: 100 });
+            boss.dialogueQueue.push({ speaker: 'Moni', text: Game.i18n.t('moniTaunt3'), duration: 240 });
           }
           /* Phase 2 taunt */
           if (boss.phase === 2 && !boss.hasTaunted2) {
             boss.hasTaunted2 = true;
-            boss.dialogueQueue.push({ speaker: 'Moni', text: Game.i18n.t('moniTaunt2'), duration: 110 });
+            boss.dialogueQueue.push({ speaker: 'Moni', text: Game.i18n.t('moniTaunt2'), duration: 260 });
           }
           /* Advance dialogue timer / dequeue next line */
           if (boss.talkTimer > 0) boss.talkTimer--;
@@ -408,9 +416,9 @@
                 );
                 /* Post-defeat exchange: Moni's cry → apology → hero's reply */
                 boss.dialogueQueue = [
-                  { speaker: 'Moni',   text: Game.i18n.t('moniDefeat'),  duration: 120 },
-                  { speaker: 'Moni',   text: Game.i18n.t('moniApology'), duration: 140 },
-                  { speaker: 'Momoko', text: Game.i18n.t('heroVictory'), duration: 140 },
+                  { speaker: 'Moni',   text: Game.i18n.t('moniDefeat'),  duration: 280 },
+                  { speaker: 'Moni',   text: Game.i18n.t('moniApology'), duration: 320 },
+                  { speaker: 'Momoko', text: Game.i18n.t('heroVictory'), duration: 320 },
                 ];
                 boss.talkTimer = 0;
                 boss.talkText = '';
@@ -539,6 +547,7 @@
 
       case State.BEACH:
         if (wolfe) wolfe.update();
+        if (Game.ui.updateBeach) Game.ui.updateBeach(keys, jp);
         break;
     }
   }
@@ -634,7 +643,7 @@
         Game.ui.drawQRCode(ctx, rightCx, qrCy, qrSize);
       }
     }
-    if (Game.input.isTouch() && state === State.PLAYING) {
+    if (Game.input.isTouch() && (state === State.PLAYING || state === State.BEACH)) {
       Game.input.drawTouchButtons(ctx);
     }
 

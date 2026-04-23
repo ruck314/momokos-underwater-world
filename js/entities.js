@@ -154,48 +154,113 @@
     this.alive = true;
   };
 
+  /* ---- Shared color helpers (hoisted so sub-painters can share) ---- */
+  function hexShade(hex, amt) {
+    var n = parseInt(hex.slice(1), 16);
+    var r = Math.max(0, ((n >> 16) & 255) - amt);
+    var g = Math.max(0, ((n >> 8) & 255) - amt);
+    var b = Math.max(0, (n & 255) - amt);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+  function hexTint(hex, amt) {
+    var n = parseInt(hex.slice(1), 16);
+    var r = Math.min(255, ((n >> 16) & 255) + amt);
+    var g = Math.min(255, ((n >> 8) & 255) + amt);
+    var b = Math.min(255, (n & 255) + amt);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  /* Five-point star fill centered at (cx, cy) with outer radius r. */
+  function fillStar(c, cx, cy, r) {
+    c.beginPath();
+    for (var i = 0; i < 10; i++) {
+      var ang = -Math.PI / 2 + i * Math.PI / 5;
+      var rr = i % 2 === 0 ? r : r * 0.4;
+      var px = cx + Math.cos(ang) * rr;
+      var py = cy + Math.sin(ang) * rr;
+      if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+    }
+    c.closePath();
+    c.fill();
+  }
+
   /* Shared Momoko sprite painter – called by gameplay draw and the
      customize-screen preview so both stay visually in sync.
-     Design (inspired by Momoko's own drawing):
-       – oversized round head with huge expressive eyes
-       – long flowing hair that hangs past the shoulders in floppy
-         rounded pigtail shapes that flip outward at the ends
-       – simple short-sleeve t-shirt and long pants
-       – tiny fin-like slip-on shoes so she still reads as a swimmer. */
+
+     Precure-inspired design:
+       – oversized round head with huge sparkle eyes (star-shaped catch-
+         light in each pupil) and rosy blush patches
+       – a peach tiara (gold band + peach gem + green leaf) crowning her
+         hair, a nod to her "Peach Princess" title from the intro
+       – hair with bow accents at the pigtail roots, plus alternate
+         styles (long braids, twin buns with ribbon tails)
+       – swappable outfits (frilly dress, sailor swimsuit, one-piece,
+         classic t-shirt) and shoes (mary-jane, sneaker, flipper)
+       – optional held food in the left hand (ice-cream, onigiri, donut)
+
+     Crab companion lives outside this painter so it can follow the
+     player in world space – see drawCrabPet. */
   function drawMomokoSprite(c, sx, sy, cust, frame) {
     var hairC = (cust && cust.hair) || '#e06088';
-    var shirtC = (cust && cust.suit) || '#3366aa';
+    var suitC = (cust && cust.suit) || '#e06088';
     var skinC = (cust && cust.skin) || '#ffddbb';
-    var shoeC = (cust && cust.flipper) || '#33bb77';
+    var shoeC = (cust && cust.flipper) || '#ff99cc';
+    var hairStyle = (cust && cust.hairStyle) || 'twinTails';
+    var outfit = (cust && cust.outfit) || 'frillyDress';
+    var shoeStyle = (cust && cust.shoes) || 'maryJane';
+    var food = (cust && cust.food) || 'none';
     var f = frame || 0;
     var kick = Math.sin(f * 1.5) * 2;
 
-    /* Derive a darker hair accent so shadow on the back hair still reads
-       no matter what hair colour the player picks. */
-    function shade(hex, amt) {
-      var n = parseInt(hex.slice(1), 16);
-      var r = Math.max(0, ((n >> 16) & 255) - amt);
-      var g = Math.max(0, ((n >> 8) & 255) - amt);
-      var b = Math.max(0, (n & 255) - amt);
-      return 'rgb(' + r + ',' + g + ',' + b + ')';
-    }
-    var hairShade = shade(hairC, 40);
+    var hairShade = hexShade(hairC, 40);
+    var suitShade = hexShade(suitC, 35);
+    var suitLight = hexTint(suitC, 40);
 
-    /* Pants (drawn early so the shirt/arms overlap cleanly) */
-    c.fillStyle = '#3a2a18';
+    /* ---------- Legs / tights ---------- */
+    /* Under the frilly dress she wears light tights; other outfits show
+       dark leggings/pants so her silhouette still reads against any
+       background. */
+    c.fillStyle = outfit === 'frillyDress' || outfit === 'sailorDress'
+      ? '#ffe8ee' : '#3a2a18';
     c.fillRect(sx + 9, sy + 25, 4, 7);
     c.fillRect(sx + 15, sy + 25, 4, 7);
 
-    /* Shoes – small rounded slip-ons */
-    c.fillStyle = shoeC;
-    c.beginPath();
-    c.ellipse(sx + 11, sy + 33 + kick * 0.3, 3, 1.6, 0, 0, Math.PI * 2);
-    c.fill();
-    c.beginPath();
-    c.ellipse(sx + 17, sy + 33 - kick * 0.3, 3, 1.6, 0, 0, Math.PI * 2);
-    c.fill();
+    /* ---------- Shoes ---------- */
+    function drawShoe(cx, cy) {
+      if (shoeStyle === 'flipper') {
+        c.fillStyle = shoeC;
+        c.beginPath();
+        c.ellipse(cx, cy, 3.2, 1.7, 0, 0, Math.PI * 2);
+        c.fill();
+      } else if (shoeStyle === 'sneaker') {
+        c.fillStyle = shoeC;
+        c.fillRect(cx - 3, cy - 1.6, 6, 2.4);
+        c.fillStyle = '#ffffff';
+        c.fillRect(cx - 3, cy + 0.4, 6, 0.9);
+        c.fillStyle = hexShade(shoeC, 50);
+        c.fillRect(cx - 3, cy + 1.1, 6, 0.5);
+      } else {
+        /* maryJane (default) */
+        c.fillStyle = shoeC;
+        c.beginPath();
+        c.ellipse(cx, cy + 0.2, 3.2, 1.9, 0, 0, Math.PI * 2);
+        c.fill();
+        c.strokeStyle = hexShade(shoeC, 30);
+        c.lineWidth = 0.8;
+        c.beginPath();
+        c.moveTo(cx - 2.2, cy - 0.6);
+        c.lineTo(cx + 2.2, cy - 0.6);
+        c.stroke();
+        c.fillStyle = '#fff4aa';
+        c.beginPath();
+        c.arc(cx, cy - 0.6, 0.55, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    drawShoe(sx + 11, sy + 33 + kick * 0.3);
+    drawShoe(sx + 17, sy + 33 - kick * 0.3);
 
-    /* Back hair mass – wide and flowing, sits behind the head */
+    /* ---------- Back hair mass ---------- */
     c.fillStyle = hairShade;
     c.beginPath();
     c.moveTo(sx + 3, sy + 9);
@@ -205,39 +270,91 @@
     c.closePath();
     c.fill();
 
-    /* Long flowing pigtails with floppy rounded tips (the signature
-       shape in the reference drawing). */
-    c.fillStyle = hairC;
-    /* Left pigtail */
-    c.beginPath();
-    c.moveTo(sx + 3, sy + 10);
-    c.bezierCurveTo(sx - 3, sy + 18, sx - 2, sy + 26, sx + 1, sy + 30);
-    c.bezierCurveTo(sx - 2, sy + 28, sx - 4, sy + 24, sx - 1, sy + 20);
-    c.bezierCurveTo(sx + 1, sy + 16, sx + 2, sy + 12, sx + 5, sy + 11);
-    c.closePath();
-    c.fill();
-    /* Right pigtail */
-    c.beginPath();
-    c.moveTo(sx + 25, sy + 10);
-    c.bezierCurveTo(sx + 31, sy + 18, sx + 30, sy + 26, sx + 27, sy + 30);
-    c.bezierCurveTo(sx + 30, sy + 28, sx + 32, sy + 24, sx + 29, sy + 20);
-    c.bezierCurveTo(sx + 27, sy + 16, sx + 26, sy + 12, sx + 23, sy + 11);
-    c.closePath();
-    c.fill();
+    /* ---------- Hairstyle variant ---------- */
+    if (hairStyle === 'longBraids') {
+      /* Braided pigtails – stacked lozenges form a zigzag down each side */
+      for (var side = 0; side < 2; side++) {
+        var bx = side === 0 ? sx + 2 : sx + 26;
+        c.fillStyle = hairC;
+        for (var b = 0; b < 5; b++) {
+          var by = sy + 10 + b * 5;
+          var off = b % 2 === 0 ? -0.8 : 0.8;
+          c.beginPath();
+          c.ellipse(bx + off, by, 2.6, 2.9, 0, 0, Math.PI * 2);
+          c.fill();
+        }
+        /* Ribbon tie at the end */
+        c.fillStyle = suitC;
+        c.beginPath();
+        c.ellipse(bx, sy + 35, 1.8, 1, 0, 0, Math.PI * 2);
+        c.fill();
+      }
+    } else if (hairStyle === 'buns') {
+      /* Twin buns on top, no long pigtails */
+      c.fillStyle = hairC;
+      c.beginPath(); c.arc(sx + 5, sy + 3, 4.2, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(sx + 23, sy + 3, 4.2, 0, Math.PI * 2); c.fill();
+      /* Bun highlight swirls */
+      c.strokeStyle = hairShade;
+      c.lineWidth = 0.6;
+      c.beginPath(); c.arc(sx + 5, sy + 3, 2.2, 0, Math.PI * 1.5); c.stroke();
+      c.beginPath(); c.arc(sx + 23, sy + 3, 2.2, 0, Math.PI * 1.5); c.stroke();
+      /* Ribbon tails hanging beside the head */
+      c.fillStyle = suitC;
+      c.beginPath();
+      c.moveTo(sx + 4, sy + 6);
+      c.quadraticCurveTo(sx + 0, sy + 14, sx + 2, sy + 24);
+      c.lineTo(sx + 5, sy + 24);
+      c.quadraticCurveTo(sx + 5, sy + 14, sx + 7, sy + 6);
+      c.closePath();
+      c.fill();
+      c.beginPath();
+      c.moveTo(sx + 24, sy + 6);
+      c.quadraticCurveTo(sx + 28, sy + 14, sx + 26, sy + 24);
+      c.lineTo(sx + 23, sy + 24);
+      c.quadraticCurveTo(sx + 23, sy + 14, sx + 21, sy + 6);
+      c.closePath();
+      c.fill();
+    } else {
+      /* twinTails (default) with bow accents at the roots */
+      c.fillStyle = hairC;
+      c.beginPath();
+      c.moveTo(sx + 3, sy + 10);
+      c.bezierCurveTo(sx - 3, sy + 18, sx - 2, sy + 26, sx + 1, sy + 30);
+      c.bezierCurveTo(sx - 2, sy + 28, sx - 4, sy + 24, sx - 1, sy + 20);
+      c.bezierCurveTo(sx + 1, sy + 16, sx + 2, sy + 12, sx + 5, sy + 11);
+      c.closePath();
+      c.fill();
+      c.beginPath();
+      c.moveTo(sx + 25, sy + 10);
+      c.bezierCurveTo(sx + 31, sy + 18, sx + 30, sy + 26, sx + 27, sy + 30);
+      c.bezierCurveTo(sx + 30, sy + 28, sx + 32, sy + 24, sx + 29, sy + 20);
+      c.bezierCurveTo(sx + 27, sy + 16, sx + 26, sy + 12, sx + 23, sy + 11);
+      c.closePath();
+      c.fill();
+      /* Ribbon bows */
+      function drawBow(bx, by) {
+        c.fillStyle = suitC;
+        c.beginPath(); c.ellipse(bx - 1.6, by, 1.6, 1.9, -0.3, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.ellipse(bx + 1.6, by, 1.6, 1.9, 0.3, 0, Math.PI * 2); c.fill();
+        c.fillStyle = suitShade;
+        c.beginPath(); c.arc(bx, by, 0.75, 0, Math.PI * 2); c.fill();
+      }
+      drawBow(sx + 4, sy + 11);
+      drawBow(sx + 24, sy + 11);
+    }
 
-    /* Top of hair / crown – rounded dome */
+    /* ---------- Hair dome + face + bangs ---------- */
     c.fillStyle = hairC;
     c.beginPath();
     c.ellipse(sx + 14, sy + 6, 12, 7, 0, Math.PI, 0);
     c.fill();
 
-    /* Face – large round head */
     c.fillStyle = skinC;
     c.beginPath();
     c.ellipse(sx + 14, sy + 12, 8, 7.5, 0, 0, Math.PI * 2);
     c.fill();
 
-    /* Front bangs – sweep across the forehead */
     c.fillStyle = hairC;
     c.beginPath();
     c.moveTo(sx + 6, sy + 7);
@@ -247,102 +364,558 @@
     c.quadraticCurveTo(sx + 7, sy + 4, sx + 6, sy + 7);
     c.closePath();
     c.fill();
+    c.beginPath(); c.ellipse(sx + 6, sy + 14, 2.2, 5, 0.15, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 22, sy + 14, 2.2, 5, -0.15, 0, Math.PI * 2); c.fill();
 
-    /* Side locks framing the cheeks */
+    /* ---------- Peach tiara ---------- */
+    /* Gold band */
+    c.strokeStyle = '#ffd24a';
+    c.lineWidth = 1.3;
     c.beginPath();
-    c.ellipse(sx + 6, sy + 14, 2.2, 5, 0.15, 0, Math.PI * 2);
-    c.fill();
+    c.arc(sx + 14, sy + 8, 6.5, Math.PI + 0.55, -0.55);
+    c.stroke();
+    /* Sparkle dots on band */
+    c.fillStyle = '#fff4a8';
+    c.beginPath(); c.arc(sx + 9.2, sy + 4.6, 0.7, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 18.8, sy + 4.6, 0.7, 0, Math.PI * 2); c.fill();
+    /* Peach gem (two lobes + cleft) */
+    var pcx = sx + 14, pcy = sy + 2.9;
+    c.fillStyle = '#ffb8a0';
+    c.beginPath(); c.arc(pcx - 0.6, pcy, 1.9, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(pcx + 0.6, pcy, 1.9, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#ff9a82';
+    c.beginPath(); c.arc(pcx + 0.5, pcy + 0.6, 1.2, 0, Math.PI * 2); c.fill();
+    /* Tiny green leaf + stem */
+    c.fillStyle = '#5cbd5c';
     c.beginPath();
-    c.ellipse(sx + 22, sy + 14, 2.2, 5, -0.15, 0, Math.PI * 2);
+    c.ellipse(pcx - 1.5, pcy - 2.1, 1.1, 0.55, -0.6, 0, Math.PI * 2);
     c.fill();
+    c.strokeStyle = '#3a7a3a';
+    c.lineWidth = 0.4;
+    c.beginPath();
+    c.moveTo(pcx - 0.4, pcy - 1.7);
+    c.lineTo(pcx - 1.1, pcy - 2.0);
+    c.stroke();
+    /* Peach highlight */
+    c.fillStyle = 'rgba(255,255,255,0.75)';
+    c.beginPath(); c.arc(pcx - 0.9, pcy - 0.6, 0.55, 0, Math.PI * 2); c.fill();
 
-    /* Big expressive eyes – outline, iris, pupil, and multiple
-       highlights for that shojo-manga sparkle. */
+    /* ---------- Eyes ---------- */
+    /* White sclera */
     c.fillStyle = '#ffffff';
-    c.beginPath(); c.ellipse(sx + 10.5, sy + 12.5, 2.6, 3.2, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(sx + 17.5, sy + 12.5, 2.6, 3.2, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = '#2a1a12';
-    c.beginPath(); c.ellipse(sx + 10.5, sy + 13, 2.1, 2.7, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(sx + 17.5, sy + 13, 2.1, 2.7, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 10.3, sy + 13, 2.9, 3.6, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 17.7, sy + 13, 2.9, 3.6, 0, 0, Math.PI * 2); c.fill();
+    /* Iris */
+    c.fillStyle = '#6e3a4a';
+    c.beginPath(); c.ellipse(sx + 10.3, sy + 13.3, 2.3, 3.0, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 17.7, sy + 13.3, 2.3, 3.0, 0, 0, Math.PI * 2); c.fill();
     /* Inner iris glow */
-    c.fillStyle = '#5a3a28';
-    c.beginPath(); c.arc(sx + 10.5, sy + 13.5, 1.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(sx + 17.5, sy + 13.5, 1.3, 0, Math.PI * 2); c.fill();
-    /* Main highlight */
+    c.fillStyle = '#b0606e';
+    c.beginPath(); c.arc(sx + 10.3, sy + 13.6, 1.3, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 17.7, sy + 13.6, 1.3, 0, Math.PI * 2); c.fill();
+    /* Pupil */
+    c.fillStyle = '#1a0c14';
+    c.beginPath(); c.arc(sx + 10.3, sy + 13.9, 0.7, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 17.7, sy + 13.9, 0.7, 0, Math.PI * 2); c.fill();
+    /* Star sparkle highlight */
     c.fillStyle = '#ffffff';
-    c.beginPath(); c.arc(sx + 11.2, sy + 12, 0.9, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(sx + 18.2, sy + 12, 0.9, 0, Math.PI * 2); c.fill();
-    /* Secondary tiny highlight */
-    c.beginPath(); c.arc(sx + 9.8, sy + 13.8, 0.4, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(sx + 16.8, sy + 13.8, 0.4, 0, Math.PI * 2); c.fill();
+    fillStar(c, sx + 11, sy + 12, 1.2);
+    fillStar(c, sx + 18.4, sy + 12, 1.2);
+    /* Secondary round highlight */
+    c.beginPath(); c.arc(sx + 9.5, sy + 14.3, 0.5, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 16.9, sy + 14.3, 0.5, 0, Math.PI * 2); c.fill();
 
-    /* Eyelashes – thin upper lid */
-    c.strokeStyle = '#2a1a12';
-    c.lineWidth = 0.7;
-    c.beginPath();
-    c.moveTo(sx + 8.3, sy + 11);
-    c.quadraticCurveTo(sx + 10.5, sy + 10, sx + 12.7, sy + 11);
-    c.stroke();
-    c.beginPath();
-    c.moveTo(sx + 15.3, sy + 11);
-    c.quadraticCurveTo(sx + 17.5, sy + 10, sx + 19.7, sy + 11);
-    c.stroke();
-
-    /* Blush */
-    c.fillStyle = 'rgba(255,170,195,0.6)';
-    c.beginPath(); c.arc(sx + 8, sy + 15.5, 1.6, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(sx + 20, sy + 15.5, 1.6, 0, Math.PI * 2); c.fill();
-
-    /* Small happy mouth */
-    c.strokeStyle = '#b24a5a';
+    /* Eyelashes – upper arc + outer flicks */
+    c.strokeStyle = '#1a0c14';
     c.lineWidth = 0.9;
     c.lineCap = 'round';
+    c.beginPath(); c.moveTo(sx + 7.8, sy + 10.8); c.quadraticCurveTo(sx + 10.3, sy + 9.3, sx + 12.9, sy + 10.8); c.stroke();
+    c.beginPath(); c.moveTo(sx + 15.1, sy + 10.8); c.quadraticCurveTo(sx + 17.7, sy + 9.3, sx + 20.2, sy + 10.8); c.stroke();
+    c.lineWidth = 0.7;
+    c.beginPath(); c.moveTo(sx + 7.8, sy + 10.8); c.lineTo(sx + 6.9, sy + 10.0); c.stroke();
+    c.beginPath(); c.moveTo(sx + 20.2, sy + 10.8); c.lineTo(sx + 21.1, sy + 10.0); c.stroke();
+
+    /* ---------- Blush + mouth ---------- */
+    c.fillStyle = 'rgba(255,160,190,0.78)';
+    c.beginPath(); c.ellipse(sx + 7.5, sy + 15.9, 2.2, 1.3, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(sx + 20.5, sy + 15.9, 2.2, 1.3, 0, 0, Math.PI * 2); c.fill();
+
+    c.strokeStyle = '#b24a5a';
+    c.lineWidth = 0.95;
+    c.lineCap = 'round';
     c.beginPath();
-    c.arc(sx + 14, sy + 16.8, 1.3, 0.2, Math.PI - 0.2);
+    c.arc(sx + 14, sy + 17, 1.3, 0.2, Math.PI - 0.2);
     c.stroke();
 
-    /* Neck */
+    /* ---------- Neck ---------- */
     c.fillStyle = skinC;
     c.fillRect(sx + 12, sy + 18.5, 4, 1.5);
 
-    /* Short-sleeve t-shirt */
-    c.fillStyle = shirtC;
-    c.beginPath();
-    c.moveTo(sx + 7, sy + 21);
-    c.quadraticCurveTo(sx + 10, sy + 19.5, sx + 14, sy + 20.2);
-    c.quadraticCurveTo(sx + 18, sy + 19.5, sx + 21, sy + 21);
-    c.lineTo(sx + 21, sy + 26);
-    c.lineTo(sx + 7, sy + 26);
-    c.closePath();
-    c.fill();
-    /* Shirt collar hint */
-    c.fillStyle = 'rgba(255,255,255,0.2)';
-    c.beginPath();
-    c.moveTo(sx + 12, sy + 20);
-    c.quadraticCurveTo(sx + 14, sy + 21.5, sx + 16, sy + 20);
-    c.lineTo(sx + 16, sy + 20.5);
-    c.quadraticCurveTo(sx + 14, sy + 22, sx + 12, sy + 20.5);
-    c.closePath();
-    c.fill();
+    /* ---------- Outfit ---------- */
+    if (outfit === 'frillyDress' || outfit === 'sailorDress' || outfit === 'starDress') {
+      /* Bodice */
+      c.fillStyle = suitC;
+      c.beginPath();
+      c.moveTo(sx + 7, sy + 21);
+      c.quadraticCurveTo(sx + 10, sy + 19.5, sx + 14, sy + 20.2);
+      c.quadraticCurveTo(sx + 18, sy + 19.5, sx + 21, sy + 21);
+      c.lineTo(sx + 20, sy + 25);
+      c.lineTo(sx + 8, sy + 25);
+      c.closePath();
+      c.fill();
+      if (outfit === 'frillyDress') {
+        /* Lace collar + heart gem */
+        c.fillStyle = '#ffffff';
+        c.beginPath();
+        c.moveTo(sx + 10, sy + 20);
+        c.quadraticCurveTo(sx + 14, sy + 22, sx + 18, sy + 20);
+        c.lineTo(sx + 17.5, sy + 21);
+        c.quadraticCurveTo(sx + 14, sy + 23, sx + 10.5, sy + 21);
+        c.closePath();
+        c.fill();
+        var hcx = sx + 14, hcy = sy + 22.6;
+        c.fillStyle = '#ff5577';
+        c.beginPath();
+        c.arc(hcx - 0.6, hcy - 0.3, 0.65, 0, Math.PI * 2);
+        c.arc(hcx + 0.6, hcy - 0.3, 0.65, 0, Math.PI * 2);
+        c.moveTo(hcx - 1.15, hcy);
+        c.lineTo(hcx, hcy + 1.3);
+        c.lineTo(hcx + 1.15, hcy);
+        c.closePath();
+        c.fill();
+      } else if (outfit === 'sailorDress') {
+        /* Sailor-dress collar */
+        c.fillStyle = '#ffffff';
+        c.beginPath();
+        c.moveTo(sx + 9, sy + 20.5);
+        c.lineTo(sx + 14, sy + 23.5);
+        c.lineTo(sx + 19, sy + 20.5);
+        c.lineTo(sx + 17, sy + 20.5);
+        c.lineTo(sx + 14, sy + 22.2);
+        c.lineTo(sx + 11, sy + 20.5);
+        c.closePath();
+        c.fill();
+        c.strokeStyle = suitShade;
+        c.lineWidth = 0.5;
+        c.beginPath();
+        c.moveTo(sx + 10, sy + 21);
+        c.lineTo(sx + 14, sy + 23);
+        c.lineTo(sx + 18, sy + 21);
+        c.stroke();
+      } else {
+        /* Star dress – gold bow at the chest and a wide star in place of
+           a collar. Bodice stays the suit color for tintability. */
+        c.fillStyle = '#ffd24a';
+        c.beginPath();
+        c.ellipse(sx + 12.4, sy + 21.2, 1.5, 1.2, -0.3, 0, Math.PI * 2); c.fill();
+        c.beginPath();
+        c.ellipse(sx + 15.6, sy + 21.2, 1.5, 1.2, 0.3, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#c88a1a';
+        c.beginPath(); c.arc(sx + 14, sy + 21.2, 0.7, 0, Math.PI * 2); c.fill();
+        /* Gold star medallion below the bow */
+        c.fillStyle = '#fff4a8';
+        fillStar(c, sx + 14, sy + 23.5, 1.4);
+      }
+      /* Flared skirt */
+      c.fillStyle = suitC;
+      c.beginPath();
+      c.moveTo(sx + 8, sy + 25);
+      c.lineTo(sx + 5, sy + 30);
+      c.lineTo(sx + 23, sy + 30);
+      c.lineTo(sx + 20, sy + 25);
+      c.closePath();
+      c.fill();
+      /* Hem decoration: scalloped for frilly/sailor, star-sprinkled for
+         starDress */
+      if (outfit === 'starDress') {
+        c.fillStyle = '#ffd24a';
+        fillStar(c, sx +  7, sy + 28.5, 0.9);
+        fillStar(c, sx + 11, sy + 29.4, 0.8);
+        fillStar(c, sx + 15, sy + 28.2, 0.9);
+        fillStar(c, sx + 19, sy + 29.3, 0.8);
+        /* Silver trim along the hem */
+        c.strokeStyle = '#ffffff';
+        c.lineWidth = 0.7;
+        c.beginPath();
+        c.moveTo(sx + 5, sy + 30);
+        c.lineTo(sx + 23, sy + 30);
+        c.stroke();
+      } else {
+        c.fillStyle = '#ffffff';
+        for (var s = 0; s < 5; s++) {
+          var scx = sx + 6 + s * 4;
+          c.beginPath(); c.arc(scx, sy + 30.5, 1.3, Math.PI, 0); c.fill();
+        }
+      }
+      /* Skirt shading wedge */
+      c.fillStyle = suitShade;
+      c.beginPath();
+      c.moveTo(sx + 14, sy + 25);
+      c.lineTo(sx + 14, sy + 30);
+      c.lineTo(sx + 18, sy + 30);
+      c.lineTo(sx + 17, sy + 25);
+      c.closePath();
+      c.fill();
+    } else if (outfit === 'frillyBikini') {
+      /* Bandeau top with a frilly bottom edge */
+      c.fillStyle = suitC;
+      c.fillRect(sx + 8, sy + 20.8, 12, 3.4);
+      c.fillStyle = '#ffffff';
+      for (var fb = 0; fb < 5; fb++) {
+        var fbx = sx + 9 + fb * 2.5;
+        c.beginPath();
+        c.arc(fbx, sy + 24.2, 1.1, Math.PI, 0);
+        c.fill();
+      }
+      /* Center bow between the cups */
+      c.fillStyle = '#ffd24a';
+      c.beginPath(); c.ellipse(sx + 13, sy + 22.2, 0.9, 0.7, -0.3, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.ellipse(sx + 15, sy + 22.2, 0.9, 0.7, 0.3, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#c88a1a';
+      c.beginPath(); c.arc(sx + 14, sy + 22.2, 0.4, 0, Math.PI * 2); c.fill();
+      /* Midriff skin shows through */
+      c.fillStyle = skinC;
+      c.fillRect(sx + 9, sy + 24.5, 10, 2.5);
+      /* Bikini bottom with a side bow */
+      c.fillStyle = suitC;
+      c.beginPath();
+      c.moveTo(sx + 8, sy + 27);
+      c.quadraticCurveTo(sx + 14, sy + 28.5, sx + 20, sy + 27);
+      c.lineTo(sx + 19, sy + 30);
+      c.lineTo(sx + 9, sy + 30);
+      c.closePath();
+      c.fill();
+      /* Side-tie bow on the right hip */
+      c.fillStyle = '#ffd24a';
+      c.beginPath(); c.ellipse(sx + 19.5, sy + 28, 1.2, 0.9, -0.4, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.ellipse(sx + 20.5, sy + 28.5, 1.2, 0.9, 0.4, 0, Math.PI * 2); c.fill();
+    } else if (outfit === 'sailorSwimsuit') {
+      c.fillStyle = suitC;
+      c.fillRect(sx + 8, sy + 20.5, 12, 7);
+      /* Sailor collar */
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.moveTo(sx + 9, sy + 20.5);
+      c.lineTo(sx + 14, sy + 24);
+      c.lineTo(sx + 19, sy + 20.5);
+      c.lineTo(sx + 17, sy + 20.5);
+      c.lineTo(sx + 14, sy + 22.5);
+      c.lineTo(sx + 11, sy + 20.5);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = suitShade;
+      c.lineWidth = 0.6;
+      c.beginPath();
+      c.moveTo(sx + 9.5, sy + 21);
+      c.lineTo(sx + 14, sy + 23.5);
+      c.lineTo(sx + 18.5, sy + 21);
+      c.stroke();
+      /* Neck bow */
+      c.fillStyle = '#ff4466';
+      c.beginPath(); c.ellipse(sx + 13, sy + 23.5, 1.3, 1, -0.3, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.ellipse(sx + 15, sy + 23.5, 1.3, 1, 0.3, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#cc3344';
+      c.beginPath(); c.arc(sx + 14, sy + 23.5, 0.5, 0, Math.PI * 2); c.fill();
+      /* Swim-bottom (high-leg) */
+      c.fillStyle = suitC;
+      c.beginPath();
+      c.moveTo(sx + 8, sy + 27);
+      c.lineTo(sx + 10, sy + 30);
+      c.lineTo(sx + 18, sy + 30);
+      c.lineTo(sx + 20, sy + 27);
+      c.closePath();
+      c.fill();
+    } else if (outfit === 'onePiece') {
+      c.fillStyle = suitC;
+      c.beginPath();
+      c.moveTo(sx + 9, sy + 20.5);
+      c.quadraticCurveTo(sx + 14, sy + 19, sx + 19, sy + 20.5);
+      c.lineTo(sx + 19, sy + 29);
+      c.quadraticCurveTo(sx + 14, sy + 30.5, sx + 9, sy + 29);
+      c.closePath();
+      c.fill();
+      /* Ruffle trim across the top */
+      c.fillStyle = suitLight;
+      c.beginPath();
+      c.moveTo(sx + 9, sy + 20.5);
+      c.quadraticCurveTo(sx + 14, sy + 19.2, sx + 19, sy + 20.5);
+      c.lineTo(sx + 19, sy + 21.3);
+      c.quadraticCurveTo(sx + 14, sy + 20, sx + 9, sy + 21.3);
+      c.closePath();
+      c.fill();
+      /* Star motif on belly */
+      c.fillStyle = '#fff4a8';
+      fillStar(c, sx + 14, sy + 24.5, 1.4);
+    } else {
+      /* Classic t-shirt */
+      c.fillStyle = suitC;
+      c.beginPath();
+      c.moveTo(sx + 7, sy + 21);
+      c.quadraticCurveTo(sx + 10, sy + 19.5, sx + 14, sy + 20.2);
+      c.quadraticCurveTo(sx + 18, sy + 19.5, sx + 21, sy + 21);
+      c.lineTo(sx + 21, sy + 26);
+      c.lineTo(sx + 7, sy + 26);
+      c.closePath();
+      c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.2)';
+      c.beginPath();
+      c.moveTo(sx + 12, sy + 20);
+      c.quadraticCurveTo(sx + 14, sy + 21.5, sx + 16, sy + 20);
+      c.lineTo(sx + 16, sy + 20.5);
+      c.quadraticCurveTo(sx + 14, sy + 22, sx + 12, sy + 20.5);
+      c.closePath();
+      c.fill();
+    }
 
-    /* Arms – skin-tone from sleeves down to hands. Right arm holds the
-       bubble gun. */
+    /* ---------- Arms ---------- */
     c.fillStyle = skinC;
-    /* Left arm */
     c.beginPath();
     c.ellipse(sx + 5.5, sy + 24, 1.7, 2.8, 0.1, 0, Math.PI * 2);
     c.fill();
-    /* Right arm extended */
     c.beginPath();
     c.ellipse(sx + 23, sy + 23, 2.3, 1.9, -0.2, 0, Math.PI * 2);
     c.fill();
-    /* Bubble-gun grip */
-    c.fillStyle = '#ff8833';
+
+    /* ---------- Magical-girl bubble wand ----------
+       Pink handle with a gold band + heart detail, then a gold shaft
+       tipped with a yellow star gem so it reads as a precure wand at
+       a glance rather than a weapon. Extends past the sprite's 28px
+       footprint which is fine – her hit-box is unchanged. */
+    /* Handle */
+    c.fillStyle = '#ff99cc';
     c.beginPath();
-    c.moveTo(sx + 26, sy + 21.5);
-    c.quadraticCurveTo(sx + 30, sy + 23, sx + 26, sy + 24.5);
+    c.ellipse(sx + 26.4, sy + 23, 2.2, 2.6, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = hexShade('#ff99cc', 30);
+    c.beginPath();
+    c.ellipse(sx + 26.4, sy + 24.5, 1.6, 0.9, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Gold band around the grip */
+    c.fillStyle = '#ffd24a';
+    c.fillRect(sx + 27.7, sy + 21.8, 1.3, 2.4);
+    /* Tiny heart on handle */
+    c.fillStyle = '#ff3366';
+    var hhx = sx + 26.3, hhy = sy + 23.2;
+    c.beginPath();
+    c.arc(hhx - 0.45, hhy - 0.3, 0.45, 0, Math.PI * 2);
+    c.arc(hhx + 0.45, hhy - 0.3, 0.45, 0, Math.PI * 2);
+    c.moveTo(hhx - 0.85, hhy);
+    c.lineTo(hhx, hhy + 0.9);
+    c.lineTo(hhx + 0.85, hhy);
     c.closePath();
     c.fill();
+    /* Gold shaft */
+    c.strokeStyle = '#ffd24a';
+    c.lineWidth = 1.3;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(sx + 29, sy + 23);
+    c.lineTo(sx + 33.5, sy + 23);
+    c.stroke();
+    /* Star gem at the tip */
+    c.fillStyle = '#ffffff';
+    fillStar(c, sx + 35, sy + 23, 2.2);
+    c.fillStyle = '#ffe066';
+    fillStar(c, sx + 35, sy + 23, 1.6);
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(sx + 35.4, sy + 22.3, 0.5, 0, Math.PI * 2); c.fill();
+    /* Sparkle dots around the tip */
+    c.fillStyle = 'rgba(255,255,255,0.8)';
+    c.beginPath(); c.arc(sx + 37.2, sy + 21.5, 0.4, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 37.5, sy + 24.4, 0.3, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(sx + 33.5, sy + 21.2, 0.3, 0, Math.PI * 2); c.fill();
+
+    /* ---------- Held food (left hand) ---------- */
+    if (food !== 'none') {
+      var fx = sx + 4, fy = sy + 22;
+      if (food === 'iceCream') {
+        c.fillStyle = '#e0b070';
+        c.beginPath();
+        c.moveTo(fx - 1.5, fy + 2);
+        c.lineTo(fx + 1.5, fy + 2);
+        c.lineTo(fx, fy + 6);
+        c.closePath();
+        c.fill();
+        c.strokeStyle = '#9a7048';
+        c.lineWidth = 0.5;
+        c.beginPath(); c.moveTo(fx - 1, fy + 2.5); c.lineTo(fx + 0.8, fy + 5); c.stroke();
+        c.fillStyle = '#ffc8d4';
+        c.beginPath(); c.arc(fx, fy + 1, 2.2, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#ff3355';
+        c.beginPath(); c.arc(fx, fy - 1.3, 0.7, 0, Math.PI * 2); c.fill();
+      } else if (food === 'onigiri') {
+        c.fillStyle = '#ffffff';
+        c.beginPath();
+        c.moveTo(fx, fy - 1.5);
+        c.lineTo(fx - 2.4, fy + 2.5);
+        c.lineTo(fx + 2.4, fy + 2.5);
+        c.closePath();
+        c.fill();
+        c.fillStyle = '#2a3a2a';
+        c.fillRect(fx - 2, fy + 1, 4, 1.4);
+        c.fillStyle = 'rgba(255,160,180,0.6)';
+        c.beginPath(); c.arc(fx - 0.9, fy + 0.5, 0.4, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(fx + 0.9, fy + 0.5, 0.4, 0, Math.PI * 2); c.fill();
+      } else if (food === 'donut') {
+        c.fillStyle = '#c88858';
+        c.beginPath(); c.arc(fx, fy + 1, 2.3, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#ff99cc';
+        c.beginPath(); c.arc(fx, fy + 1, 2.1, Math.PI + 0.3, -0.3, false); c.fill();
+        c.fillStyle = '#ffe4b0';
+        c.beginPath(); c.arc(fx, fy + 1, 0.75, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#ffff66'; c.fillRect(fx - 1, fy - 0.2, 0.4, 0.4);
+        c.fillStyle = '#66ddff'; c.fillRect(fx + 0.8, fy, 0.4, 0.4);
+        c.fillStyle = '#ff66aa'; c.fillRect(fx - 0.2, fy + 0.5, 0.4, 0.4);
+      } else if (food === 'crepe') {
+        /* Rolled cream crepe – beige cone wrap with pink cream peeking */
+        c.fillStyle = '#f2d8a4';
+        c.beginPath();
+        c.moveTo(fx - 2, fy - 2);
+        c.lineTo(fx + 2, fy - 2);
+        c.lineTo(fx, fy + 4);
+        c.closePath();
+        c.fill();
+        /* Cream */
+        c.fillStyle = '#ffdceb';
+        c.beginPath(); c.arc(fx, fy - 1.8, 1.4, Math.PI, 0); c.fill();
+        /* Berry */
+        c.fillStyle = '#dd3355';
+        c.beginPath(); c.arc(fx - 0.6, fy - 2.2, 0.55, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#2a5d2a';
+        c.fillRect(fx - 0.8, fy - 2.7, 0.4, 0.4);
+      } else if (food === 'taiyaki') {
+        /* Fish-shaped pastry */
+        c.fillStyle = '#cc8844';
+        c.beginPath();
+        c.ellipse(fx, fy + 1, 3, 1.8, 0, 0, Math.PI * 2);
+        c.fill();
+        /* Tail fin */
+        c.beginPath();
+        c.moveTo(fx + 2.5, fy + 1);
+        c.lineTo(fx + 4, fy - 0.5);
+        c.lineTo(fx + 4, fy + 2.5);
+        c.closePath();
+        c.fill();
+        /* Side highlight */
+        c.fillStyle = '#e0a868';
+        c.beginPath(); c.ellipse(fx - 0.5, fy + 0.3, 1.6, 0.5, 0, 0, Math.PI * 2); c.fill();
+        /* Eye */
+        c.fillStyle = '#1a0c14';
+        c.beginPath(); c.arc(fx - 1.8, fy + 0.5, 0.3, 0, Math.PI * 2); c.fill();
+        /* Scale line */
+        c.strokeStyle = '#8a5520';
+        c.lineWidth = 0.3;
+        c.beginPath();
+        c.moveTo(fx - 1, fy + 0.2); c.lineTo(fx + 1.5, fy + 0.2);
+        c.stroke();
+      } else if (food === 'parfait') {
+        /* Glass with stacked layers, cream swirl on top */
+        /* Glass cup */
+        c.strokeStyle = 'rgba(255,255,255,0.6)';
+        c.lineWidth = 0.4;
+        c.strokeRect(fx - 1.6, fy - 1.5, 3.2, 5);
+        /* Chocolate layer (bottom) */
+        c.fillStyle = '#6b3a1a';
+        c.fillRect(fx - 1.4, fy + 2, 2.8, 1.3);
+        /* Cream layer */
+        c.fillStyle = '#fff4dc';
+        c.fillRect(fx - 1.4, fy + 0.7, 2.8, 1.3);
+        /* Strawberry layer */
+        c.fillStyle = '#ff6688';
+        c.fillRect(fx - 1.4, fy - 0.6, 2.8, 1.3);
+        /* Whipped cream swirl */
+        c.fillStyle = '#ffffff';
+        c.beginPath(); c.arc(fx, fy - 1.8, 1.3, Math.PI, 0); c.fill();
+        c.beginPath(); c.arc(fx - 0.5, fy - 2.3, 0.7, Math.PI, 0); c.fill();
+        c.beginPath(); c.arc(fx + 0.3, fy - 2.6, 0.5, Math.PI, 0); c.fill();
+        /* Cherry */
+        c.fillStyle = '#dd2244';
+        c.beginPath(); c.arc(fx + 0.6, fy - 2.9, 0.5, 0, Math.PI * 2); c.fill();
+      } else if (food === 'macaron') {
+        /* Two pastel shells with a cream filling */
+        c.fillStyle = '#ffbadb';
+        c.beginPath();
+        c.ellipse(fx, fy - 0.8, 2.4, 1.1, 0, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = '#ffffff';
+        c.fillRect(fx - 2.4, fy - 0.1, 4.8, 0.9);
+        c.fillStyle = '#ff9ac2';
+        c.beginPath();
+        c.ellipse(fx, fy + 1.3, 2.4, 1.1, 0, 0, Math.PI * 2);
+        c.fill();
+        /* Top sheen */
+        c.fillStyle = 'rgba(255,255,255,0.5)';
+        c.beginPath();
+        c.ellipse(fx - 0.8, fy - 1, 1, 0.3, 0, 0, Math.PI * 2);
+        c.fill();
+      } else if (food === 'strawberry') {
+        /* Red cone with leafy cap and seed dots */
+        c.fillStyle = '#e8344a';
+        c.beginPath();
+        c.moveTo(fx - 2, fy - 1);
+        c.quadraticCurveTo(fx, fy + 4, fx + 2, fy - 1);
+        c.closePath();
+        c.fill();
+        /* Seeds */
+        c.fillStyle = '#fff4a8';
+        c.beginPath(); c.arc(fx - 0.8, fy + 0.5, 0.25, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(fx + 0.6, fy + 0.3, 0.25, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(fx, fy + 1.6, 0.25, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(fx - 1.1, fy + 1.9, 0.25, 0, Math.PI * 2); c.fill();
+        /* Green cap */
+        c.fillStyle = '#3caf3c';
+        c.beginPath();
+        c.moveTo(fx - 2.2, fy - 1);
+        c.lineTo(fx - 0.6, fy - 1.8);
+        c.lineTo(fx + 0.6, fy - 1.8);
+        c.lineTo(fx + 2.2, fy - 1);
+        c.lineTo(fx, fy - 0.2);
+        c.closePath();
+        c.fill();
+      }
+    }
+  }
+
+  /* Crab companion – drawn separately so it can follow the player at an
+     offset from the main sprite bounding box. `variant` picks the shell
+     palette (red/blue/gold) or 'none' to skip entirely. */
+  function drawCrabPet(c, px, py, variant, frame) {
+    if (!variant || variant === 'none') return;
+    var body, claw;
+    if (variant === 'blue') { body = '#4477cc'; claw = '#335599'; }
+    else if (variant === 'gold') { body = '#ffcc44'; claw = '#cc9922'; }
+    else { body = '#dd4444'; claw = '#aa2222'; }
+    var wobble = Math.sin((frame || 0) * 0.25) * 0.8;
+    /* Shell */
+    c.fillStyle = body;
+    c.beginPath();
+    c.ellipse(px, py, 5, 3.5, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.35)';
+    c.beginPath();
+    c.ellipse(px - 1.2, py - 1, 1.6, 0.8, 0, 0, Math.PI * 2);
+    c.fill();
+    /* Claws */
+    c.fillStyle = claw;
+    c.beginPath(); c.arc(px - 5, py - 1 + wobble, 1.9, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(px + 5, py - 1 - wobble, 1.9, 0, Math.PI * 2); c.fill();
+    /* Eye stalks */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(px - 1.5, py - 2.6, 0.85, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(px + 1.5, py - 2.6, 0.85, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#000000';
+    c.beginPath(); c.arc(px - 1.5, py - 2.6, 0.35, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(px + 1.5, py - 2.6, 0.35, 0, Math.PI * 2); c.fill();
+    /* Legs */
+    c.strokeStyle = claw;
+    c.lineWidth = 0.7;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(px - 3, py + 2); c.lineTo(px - 4, py + 3.8);
+    c.moveTo(px + 3, py + 2); c.lineTo(px + 4, py + 3.8);
+    c.moveTo(px - 1.5, py + 2.8); c.lineTo(px - 2, py + 4.4);
+    c.moveTo(px + 1.5, py + 2.8); c.lineTo(px + 2, py + 4.4);
+    c.stroke();
   }
 
   Momoko.prototype.draw = function (c, camX, camY) {
@@ -360,6 +933,12 @@
       sx = -this.w / 2;
     }
     drawMomokoSprite(c, sx, sy, cust, this.animFrame);
+    /* Crab pet trails at foot level; drawn inside the flip transform so
+       it stays on the side opposite the facing direction (i.e. behind
+       her as she swims). */
+    if (cust.crab && cust.crab !== 'none') {
+      drawCrabPet(c, sx - 8, sy + 32, cust.crab, this.animTimer);
+    }
     c.restore();
   };
 
@@ -372,10 +951,14 @@
     var shirtC = (cust && cust.suit) || '#3366aa';
     var skinC = (cust && cust.skin) || '#ffddbb';
     var shoeC = (cust && cust.flipper) || '#33bb77';
-    /* Square wave: arms and hips flip sides on each beat for a crisp,
-       snappy floss rather than a smooth sway. */
-    var beat = Math.sin(phase) > 0 ? 1 : -1;
-    /* Small ease for a little motion between beats */
+    /* Soft-clamped sigmoid (tanh of a boosted sine) gives smooth in-
+       between frames while still "holding" near ±1 at each beat, so
+       the pose reads as floss instead of a lazy hula. `beat` is used
+       in the drawing math where it treats the value as a scalar
+       displacement – any value in [-1, 1] is fine. */
+    var beat = Math.tanh(Math.sin(phase) * 3.2);
+    /* Secondary bob that never zeroes out, for subtle motion during
+       the "hold" portion of each beat. */
     var ease = Math.sin(phase * 2) * 0.3;
     var hipShift = beat * 2;
     var bodyTilt = beat * 0.08;
@@ -461,6 +1044,28 @@
     c.beginPath();
     c.ellipse(22, 14, 2.2, 5, -0.15, 0, Math.PI * 2);
     c.fill();
+
+    /* Peach tiara – matches drawMomokoSprite so the pause pose reads as
+       the same character. */
+    c.strokeStyle = '#ffd24a';
+    c.lineWidth = 1.3;
+    c.beginPath();
+    c.arc(14, 8, 6.5, Math.PI + 0.55, -0.55);
+    c.stroke();
+    c.fillStyle = '#fff4a8';
+    c.beginPath(); c.arc(9.2, 4.6, 0.7, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(18.8, 4.6, 0.7, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#ffb8a0';
+    c.beginPath(); c.arc(13.4, 2.9, 1.9, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(14.6, 2.9, 1.9, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#ff9a82';
+    c.beginPath(); c.arc(14.5, 3.5, 1.2, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#5cbd5c';
+    c.beginPath();
+    c.ellipse(12.5, 0.8, 1.1, 0.55, -0.6, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.75)';
+    c.beginPath(); c.arc(13.1, 2.3, 0.55, 0, Math.PI * 2); c.fill();
 
     /* Eyes – closed & happy (floss joy!) */
     c.strokeStyle = '#2a1a12';
@@ -1281,7 +1886,7 @@
 
   Oliver.prototype.interact = function () {
     this.talking = true;
-    this.talkTimer = 240;
+    this.talkTimer = 540;
     this.currentJoke = Game.i18n.getJoke();
   };
 
@@ -1385,7 +1990,7 @@
 
   KittyCorn.prototype.interact = function () {
     this.talking = true;
-    this.talkTimer = 240;
+    this.talkTimer = 540;
     if (!this.interacted) {
       this.currentText = Game.i18n.t('kittyGreet');
       this.interacted = true;
@@ -1525,7 +2130,7 @@
 
   Bob.prototype.interact = function () {
     this.talking = true;
-    this.talkTimer = 240;
+    this.talkTimer = 540;
     this.currentText = Game.i18n.t('bobGreet') + '\n' + Game.i18n.getFact();
   };
 
@@ -1759,7 +2364,7 @@
 
   Crab.prototype.interact = function () {
     this.talking = true;
-    this.talkTimer = 240;
+    this.talkTimer = 540;
     this.currentJoke = Game.i18n.getCrabJoke();
   };
 
@@ -2000,5 +2605,6 @@
     spawnBurst: spawnBurst,
     drawMomokoSprite: drawMomokoSprite,
     drawMomokoFloss: drawMomokoFloss,
+    drawCrabPet: drawCrabPet,
   };
 })();
