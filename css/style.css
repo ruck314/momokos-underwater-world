@@ -34,6 +34,9 @@ html, body {
   #game-container {
     display: none;
   }
+  #game-center-link {
+    display: none;
+  }
 }
 
 #rotate-hint {
@@ -65,4 +68,54 @@ html, body {
 #rotate-hint .hint-line-ja {
   color: #ff9ec4;
   font-size: 18px;
+}
+
+/* Back to Game Center link — translucent underwater bubble */
+#game-center-link {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: bold;
+  color: rgba(180, 230, 255, 0.75);
+  background: rgba(10, 40, 80, 0.35);
+  border: 1px solid rgba(120, 200, 255, 0.35);
+  border-radius: 14px;
+  text-decoration: none;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  opacity: 0.55;
+  transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#game-center-link:hover,
+#game-center-link:focus {
+  opacity: 1;
+  color: #e0f4ff;
+  background: rgba(20, 80, 140, 0.7);
+  border-color: rgba(180, 230, 255, 0.8);
+  outline: none;
+}
+
+#game-center-link .gcl-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Hide on very narrow screens where space is tight */
+@media (max-width: 480px) {
+  #game-center-link .gcl-text {
+    display: none;
+  }
+  #game-center-link {
+    padding: 5px 7px;
+  }
 }
