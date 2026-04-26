@@ -951,17 +951,26 @@
     var shirtC = (cust && cust.suit) || '#3366aa';
     var skinC = (cust && cust.skin) || '#ffddbb';
     var shoeC = (cust && cust.flipper) || '#33bb77';
-    /* Soft-clamped sigmoid (tanh of a boosted sine) gives smooth in-
-       between frames while still "holding" near ±1 at each beat, so
-       the pose reads as floss instead of a lazy hula. `beat` is used
-       in the drawing math where it treats the value as a scalar
-       displacement – any value in [-1, 1] is fine. */
+    /* Soft-clamped sigmoid (tanh of a boosted sine) gives sharp pose
+       changes at each beat with smooth in-betweens so the move reads
+       as floss instead of a lazy hula. beat ∈ [-1, 1]. */
     var beat = Math.tanh(Math.sin(phase) * 3.2);
-    /* Secondary bob that never zeroes out, for subtle motion during
-       the "hold" portion of each beat. */
-    var ease = Math.sin(phase * 2) * 0.3;
-    var hipShift = beat * 2;
-    var bodyTilt = beat * 0.08;
+    var hipShift = beat * 2.5;
+    var bodyTilt = beat * 0.05;
+
+    /* Floss arms: both hands swing to the side opposite the hips. The
+       arm whose shoulder is on the FAR side of the swing crosses in
+       FRONT of the chest at chest height; the arm on the NEAR side
+       extends out at hip height BEHIND the body. Shoulder x's slide
+       smoothly with the beat so the arms pass through the center at
+       each transition. */
+    var armDir = -beat;
+    var crossShX = 14 - armDir * 5;
+    var extShX   = 14 + armDir * 5;
+    var crossHandX = 14 + armDir * 10;
+    var crossHandY = 21;
+    var extHandX   = 14 + armDir * 12;
+    var extHandY   = 27;
 
     c.save();
     c.translate(sx + 14, sy + 22);
@@ -1095,6 +1104,18 @@
     c.fillStyle = skinC;
     c.fillRect(12, 18.5, 4, 1.5);
 
+    /* Back (extending) arm — drawn before the shirt so it reads as
+       passing behind the body. */
+    c.strokeStyle = skinC;
+    c.lineWidth = 3;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(extShX, 24);
+    c.lineTo(extHandX, extHandY);
+    c.stroke();
+    c.fillStyle = skinC;
+    c.beginPath(); c.arc(extHandX, extHandY, 1.8, 0, Math.PI * 2); c.fill();
+
     /* Shirt */
     c.fillStyle = shirtC;
     c.beginPath();
@@ -1106,28 +1127,17 @@
     c.closePath();
     c.fill();
 
-    /* Floss arms: both swing to the same side (the hallmark of the move).
-       When beat=+1, both arms cross to the right side of the body; when
-       beat=-1, to the left. Arms drawn as stubby stick-figure segments
-       with skin-tone hands. */
+    /* Front (crossing) arm — drawn after the shirt so it visually
+       sweeps across the chest from the far shoulder to the near hand. */
     c.strokeStyle = skinC;
     c.lineWidth = 3;
     c.lineCap = 'round';
-    var armDir = -beat; /* opposite to hips */
-    /* Top arm – goes across the front of the body */
     c.beginPath();
-    c.moveTo(14 - armDir * 4, 22);
-    c.lineTo(14 + armDir * 9, 21 + ease);
+    c.moveTo(crossShX, 22);
+    c.lineTo(crossHandX, crossHandY);
     c.stroke();
-    /* Bottom arm – goes across behind the body (lower) */
-    c.beginPath();
-    c.moveTo(14 + armDir * 4, 23);
-    c.lineTo(14 - armDir * 9, 26 - ease);
-    c.stroke();
-    /* Hands */
     c.fillStyle = skinC;
-    c.beginPath(); c.arc(14 + armDir * 10, 21 + ease, 1.8, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(14 - armDir * 10, 26 - ease, 1.8, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(crossHandX, crossHandY, 1.8, 0, Math.PI * 2); c.fill();
 
     c.restore();
   }

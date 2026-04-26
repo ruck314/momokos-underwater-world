@@ -214,6 +214,19 @@
         drawHeart(c, hx, hy, 10);
       }
     }
+
+    /* Version stamp (bottom-right) – matches the title screen so the
+       running build is visible during gameplay too. */
+    if (Game.VERSION) {
+      c.save();
+      c.fillStyle = '#4a6a8a';
+      c.font = '11px monospace';
+      c.textAlign = 'right';
+      c.textBaseline = 'alphabetic';
+      var stamp = Game.VERSION + (Game.BUILD ? ' (' + Game.BUILD + ')' : '');
+      c.fillText(stamp, W - 8, H - 8);
+      c.restore();
+    }
   }
 
   function drawHeart(c, cx, cy, size) {

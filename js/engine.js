@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.4.0';
+  Game.VERSION = 'v1.5.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -88,6 +88,9 @@
      the retry button can drop the player just outside the boss arena
      instead of sending them all the way back to the level start. */
   var lastDeathInBoss = false;
+  /* Each game-over that happens during the boss fight grants +1 max heart on
+     subsequent attempts so a struggling player gradually gets more margin. */
+  var bossDeathBonus = 0;
 
   /* Dialogue message queued during the playing-state render; drawn in
      canvas-space after the game viewport is painted so it can live in
@@ -189,6 +192,10 @@
     /* Player */
     var sp = level.spawns.player;
     player = new Game.entities.Momoko(sp.x, sp.y);
+    if (bossDeathBonus > 0) {
+      player.maxHealth += bossDeathBonus;
+      player.health = player.maxHealth;
+    }
     respawnPos = { x: sp.x, y: sp.y };
 
     /* Enemies */
@@ -446,6 +453,7 @@
               if (died && !player.alive) {
                 if (player.health <= 0) {
                   lastDeathInBoss = bossActivated && boss && !boss.defeated;
+                  if (lastDeathInBoss) bossDeathBonus++;
                   state = State.GAME_OVER;
                   Game.audio.stopMusic();
                   Game.audio.play('gameOver');
@@ -468,6 +476,7 @@
               if (died2 && !player.alive) {
                 if (player.health <= 0) {
                   lastDeathInBoss = true;
+                  bossDeathBonus++;
                   state = State.GAME_OVER;
                   Game.audio.stopMusic();
                   Game.audio.play('gameOver');
