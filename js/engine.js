@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.5.0';
+  Game.VERSION = 'v1.5.1';
   Game.BUILD = '';
   var canvas, ctx;
 

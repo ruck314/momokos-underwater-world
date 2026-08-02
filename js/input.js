@@ -4,6 +4,13 @@
   window.Game = window.Game || {};
 
   var keys = { left: false, right: false, up: false, down: false, action: false, pause: false };
+  /* Keyboard state, kept separate from touch and merged into `keys`
+     every frame by processTouches(). Both sources used to write into
+     `keys` directly, which meant a finger release could never be
+     cleared -- worked around by zeroing the keyboard on any touch-
+     capable device, which disabled the keyboard on touchscreen
+     laptops and tablets with keyboard cases. */
+  var kb = { left: false, right: false, up: false, down: false, action: false, pause: false };
   var justPressed = { action: false, pause: false };
   var prevKeys = { action: false, pause: false };
 
@@ -83,23 +90,23 @@
   /* Keyboard */
   function onKeyDown(e) {
     switch (e.code) {
-      case 'ArrowLeft': case 'KeyA': keys.left = true; break;
-      case 'ArrowRight': case 'KeyD': keys.right = true; break;
-      case 'ArrowUp': case 'KeyW': keys.up = true; break;
-      case 'ArrowDown': case 'KeyS': keys.down = true; break;
-      case 'Space': case 'KeyZ': keys.action = true; e.preventDefault(); break;
-      case 'Escape': case 'KeyP': keys.pause = true; break;
+      case 'ArrowLeft': case 'KeyA': kb.left = true; break;
+      case 'ArrowRight': case 'KeyD': kb.right = true; break;
+      case 'ArrowUp': case 'KeyW': kb.up = true; break;
+      case 'ArrowDown': case 'KeyS': kb.down = true; break;
+      case 'Space': case 'KeyZ': kb.action = true; e.preventDefault(); break;
+      case 'Escape': case 'KeyP': kb.pause = true; break;
     }
   }
 
   function onKeyUp(e) {
     switch (e.code) {
-      case 'ArrowLeft': case 'KeyA': keys.left = false; break;
-      case 'ArrowRight': case 'KeyD': keys.right = false; break;
-      case 'ArrowUp': case 'KeyW': keys.up = false; break;
-      case 'ArrowDown': case 'KeyS': keys.down = false; break;
-      case 'Space': case 'KeyZ': keys.action = false; break;
-      case 'Escape': case 'KeyP': keys.pause = false; break;
+      case 'ArrowLeft': case 'KeyA': kb.left = false; break;
+      case 'ArrowRight': case 'KeyD': kb.right = false; break;
+      case 'ArrowUp': case 'KeyW': kb.up = false; break;
+      case 'ArrowDown': case 'KeyS': kb.down = false; break;
+      case 'Space': case 'KeyZ': kb.action = false; break;
+      case 'Escape': case 'KeyP': kb.pause = false; break;
     }
   }
 
@@ -135,12 +142,13 @@
       if (tr.button) touchButtons[tr.button].active = true;
     }
 
-    keys.up = keys.up || touchButtons.up.active;
-    keys.down = keys.down || touchButtons.down.active;
-    keys.left = keys.left || touchButtons.left.active;
-    keys.right = keys.right || touchButtons.right.active;
-    keys.action = keys.action || touchButtons.action.active;
-    keys.pause = keys.pause || touchButtons.pause.active;
+    /* Merge both input sources instead of letting either clobber the other. */
+    keys.up = kb.up || touchButtons.up.active;
+    keys.down = kb.down || touchButtons.down.active;
+    keys.left = kb.left || touchButtons.left.active;
+    keys.right = kb.right || touchButtons.right.active;
+    keys.action = kb.action || touchButtons.action.active;
+    keys.pause = kb.pause || touchButtons.pause.active;
   }
 
   function onTouchStart(e) {
@@ -415,12 +423,6 @@
   window.Game.input = {
     init: init,
     update: function () {
-      /* Reset keyboard states that are modified by touch */
-      if (isTouchDevice) {
-        keys.up = false; keys.down = false;
-        keys.left = false; keys.right = false;
-        keys.action = false; keys.pause = false;
-      }
       processTouches();
       update();
     },
