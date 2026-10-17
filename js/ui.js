@@ -18,11 +18,6 @@
     });
   }
 
-  /* Title seaweed tip heights, seeded once so the fronds sway instead of
-     jittering every frame. */
-  var titleSeaweedTips = [];
-  for (var sw0 = 0; sw0 < 12; sw0++) titleSeaweedTips.push(Math.random() * 10);
-
   /* ---- Helpers ---- */
   var FONT = '"M PLUS Rounded 1c", sans-serif';
 
@@ -51,11 +46,10 @@
 
   /* Rounded, glossy button with hover and press feedback. `style` picks a
      palette: undefined = standard sea-blue, 'primary' = coral call-to-
-     action, 'soft' = muted rose for the red-tinted Game Over screen. */
+     action. */
   var BUTTON_PALETTES = {
     standard: { top: '#1f86a8', bot: '#0c4a6e', hTop: '#33a8cc', hBot: '#14648e', edge: '#7ce8ff' },
     primary:  { top: '#ff8e9c', bot: '#e04f6c', hTop: '#ffacb6', hBot: '#f06884', edge: '#ffe2e8' },
-    soft:     { top: '#b8667a', bot: '#7a3346', hTop: '#cc7c90', hBot: '#924058', edge: '#ffc4cf' },
   };
   function drawButton(c, text, x, y, w, h, hover, style) {
     hover = hover || pointerOver(c, x, y, w, h);
@@ -132,85 +126,236 @@
     return lines.length * lineHeight;
   }
 
-  /* ---- Title Screen ---- */
-  function drawTitleScreen(c) {
-    titleAnimTimer++;
-
-    /* Background gradient */
+  /* ---- Sea backdrop shared by the title, intro and victory screens ----
+     Deep-water gradient, a soft sun glow at the surface, sweeping light
+     rays that fade with depth, and drifting highlighted bubbles. */
+  function drawSeaBackdrop(c, t, bright) {
     var grad = c.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, '#0a1628');
-    grad.addColorStop(0.5, '#0d2847');
-    grad.addColorStop(1, '#162e50');
+    grad.addColorStop(0, bright ? '#1b5f8f' : '#11406b');
+    grad.addColorStop(0.45, bright ? '#114574' : '#0d2c52');
+    grad.addColorStop(1, '#0a1a36');
     c.fillStyle = grad;
     c.fillRect(0, 0, W, H);
 
-    /* Animated bubbles */
+    var sun = c.createRadialGradient(W * 0.5, -40, 10, W * 0.5, -40, 420);
+    sun.addColorStop(0, 'rgba(170, 235, 255, 0.35)');
+    sun.addColorStop(1, 'rgba(170, 235, 255, 0)');
+    c.fillStyle = sun;
+    c.fillRect(0, 0, W, H);
+
+    c.save();
+    var rg = c.createLinearGradient(0, 0, 0, H);
+    rg.addColorStop(0, 'rgba(190, 240, 255, 0.13)');
+    rg.addColorStop(1, 'rgba(190, 240, 255, 0)');
+    c.fillStyle = rg;
+    for (var r = 0; r < 5; r++) {
+      var rx = 80 + r * 170 + Math.sin(t * 0.005 + r * 1.7) * 30;
+      c.beginPath();
+      c.moveTo(rx, 0);
+      c.lineTo(rx + 34 + (r % 2) * 20, 0);
+      c.lineTo(rx + 110, H);
+      c.lineTo(rx - 30, H);
+      c.closePath();
+      c.fill();
+    }
+    c.restore();
+
     for (var i = 0; i < titleBubbles.length; i++) {
       var b = titleBubbles[i];
       b.wobble += 0.02;
       b.y -= b.speed;
       if (b.y < -10) { b.y = H + 10; b.x = Math.random() * W; }
+      var bx = b.x + Math.sin(b.wobble) * 15;
       c.save();
-      c.globalAlpha = 0.3;
-      c.fillStyle = '#66bbee';
+      c.globalAlpha = 0.35;
+      c.strokeStyle = '#a8e4ff';
+      c.lineWidth = 1;
       c.beginPath();
-      c.arc(b.x + Math.sin(b.wobble) * 15, b.y, b.r, 0, Math.PI * 2);
+      c.arc(bx, b.y, b.r, 0, Math.PI * 2);
+      c.stroke();
+      c.fillStyle = 'rgba(140, 210, 255, 0.35)';
+      c.fill();
+      c.globalAlpha = 0.7;
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.arc(bx - b.r * 0.35, b.y - b.r * 0.35, Math.max(0.8, b.r * 0.25), 0, Math.PI * 2);
       c.fill();
       c.restore();
     }
+  }
 
-    /* Light rays */
-    c.save();
-    c.globalAlpha = 0.04;
-    for (var r = 0; r < 5; r++) {
-      var rx = 100 + r * 160 + Math.sin(titleAnimTimer * 0.005 + r) * 30;
-      c.fillStyle = '#88ccff';
+  /* Sandy reef foreground along the bottom edge: a sand bank, corals and
+     swaying seaweed clustered at both sides so the centre stays clear. */
+  var FG_CORALS = [
+    { x: 40, y: 452, v: 2 }, { x: 96, y: 446, v: 0 }, { x: 196, y: 458, v: 1 },
+    { x: 612, y: 458, v: 1 }, { x: 700, y: 446, v: 0 }, { x: 762, y: 452, v: 2 },
+  ];
+  var FG_WEEDS = [
+    { x: 18, h: 110 }, { x: 64, h: 80 }, { x: 140, h: 120 }, { x: 236, h: 70 },
+    { x: 566, h: 76 }, { x: 650, h: 124 }, { x: 732, h: 92 }, { x: 786, h: 112 },
+  ];
+  function drawReefForeground(c, t) {
+    var sg = c.createLinearGradient(0, 440, 0, H);
+    sg.addColorStop(0, '#b39a6e');
+    sg.addColorStop(1, '#5b4a35');
+    c.fillStyle = sg;
+    c.beginPath();
+    c.moveTo(0, H);
+    for (var x = 0; x <= W; x += 10) {
+      c.lineTo(x, 448 + Math.sin(x * 0.011) * 6 + Math.sin(x * 0.031) * 3);
+    }
+    c.lineTo(W, H);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = 'rgba(255, 240, 200, 0.35)';
+    c.lineWidth = 1.5;
+    c.beginPath();
+    for (var x2 = 0; x2 <= W; x2 += 10) {
+      var y2 = 449 + Math.sin(x2 * 0.011) * 6 + Math.sin(x2 * 0.031) * 3;
+      if (x2 === 0) c.moveTo(x2, y2); else c.lineTo(x2, y2);
+    }
+    c.stroke();
+
+    for (var w = 0; w < FG_WEEDS.length; w++) {
+      var wd = FG_WEEDS[w];
+      var sway = Math.sin(t * 0.025 + w * 1.3) * 10;
+      var wg = c.createLinearGradient(0, H - wd.h, 0, H);
+      wg.addColorStop(0, '#5fd38a');
+      wg.addColorStop(1, '#16603a');
+      c.fillStyle = wg;
       c.beginPath();
-      c.moveTo(rx, 0);
-      c.lineTo(rx + 40, 0);
-      c.lineTo(rx + 80, H);
-      c.lineTo(rx - 40, H);
+      c.moveTo(wd.x - 5, H);
+      c.bezierCurveTo(wd.x - 12 + sway * 0.4, H - wd.h * 0.4, wd.x - 4 + sway, H - wd.h * 0.75, wd.x + sway * 1.2, H - wd.h);
+      c.bezierCurveTo(wd.x + 8 + sway, H - wd.h * 0.7, wd.x + 6 + sway * 0.4, H - wd.h * 0.35, wd.x + 6, H);
       c.closePath();
       c.fill();
     }
-    c.restore();
-
-    /* Seaweed at bottom */
-    for (var sw = 0; sw < 12; sw++) {
-      var swx = sw * 70 + 20;
-      var sway = Math.sin(titleAnimTimer * 0.02 + sw) * 8;
-      c.fillStyle = '#1a5533';
-      c.beginPath();
-      c.moveTo(swx, H);
-      c.quadraticCurveTo(swx + sway, H - 40, swx + 5, H - 60 - titleSeaweedTips[sw]);
-      c.quadraticCurveTo(swx - sway + 10, H - 40, swx + 10, H);
-      c.closePath();
-      c.fill();
+    if (Game.engine && Game.engine.drawCoral) {
+      for (var k = 0; k < FG_CORALS.length; k++) {
+        var fc = FG_CORALS[k];
+        c.save();
+        c.translate(fc.x, fc.y);
+        c.scale(1.5, 1.5);
+        Game.engine.drawCoral(c, 0, 0, fc.v, fc.x);
+        c.restore();
+      }
     }
+  }
 
-    /* Title text with wave effect */
-    var title = Game.i18n.t('title');
+  /* Big outlined logo text with a gentle per-letter bob. All outlines are
+     stroked first so a letter's outline never covers its neighbour. */
+  function drawLogoText(c, text, cx, cy, size, t) {
     c.save();
-    c.font = 'bold 36px "M PLUS Rounded 1c", sans-serif';
-    c.textAlign = 'center';
+    fitFont(c, text, W - 90, size, 'bold');
+    c.textAlign = 'left';
     c.textBaseline = 'middle';
-    /* Shadow */
-    c.fillStyle = '#003366';
-    c.fillText(title, W / 2 + 2, 102);
-    /* Main */
-    c.fillStyle = '#66ccff';
-    c.fillText(title, W / 2, 100);
-    /* Glow */
-    c.shadowColor = '#44aaff';
-    c.shadowBlur = 15;
-    c.fillText(title, W / 2, 100);
+    var chars = text.split('');
+    var widths = [], total = 0;
+    for (var i = 0; i < chars.length; i++) { widths.push(c.measureText(chars[i]).width); total += widths[i]; }
+    var x0 = cx - total / 2;
+    var g = c.createLinearGradient(0, cy - size / 2, 0, cy + size / 2);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.45, '#9ff2ff');
+    g.addColorStop(1, '#44b4ff');
+    c.lineJoin = 'round';
+    for (var pass = 0; pass < 3; pass++) {
+      var x = x0;
+      for (var j = 0; j < chars.length; j++) {
+        var y = cy + Math.sin(t * 0.05 + j * 0.45) * 3;
+        if (pass === 0) {
+          c.fillStyle = 'rgba(2, 16, 40, 0.6)';
+          c.fillText(chars[j], x + 2, y + 5);
+        } else if (pass === 1) {
+          c.shadowColor = 'rgba(80, 210, 255, 0.6)';
+          c.shadowBlur = 14;
+          c.strokeStyle = '#0b2f5c';
+          c.lineWidth = 8;
+          c.strokeText(chars[j], x, y);
+          c.shadowBlur = 0;
+        } else {
+          c.fillStyle = g;
+          c.fillText(chars[j], x, y);
+        }
+        x += widths[j];
+      }
+    }
     c.restore();
+  }
+
+  /* Title fish: real Fish entities, positioned by hand each frame. */
+  var titleFish = null;
+  function drawTitleFish(c, t) {
+    if (!Game.entities || !Game.entities.Fish) return;
+    if (!titleFish) {
+      titleFish = [
+        { f: new Game.entities.Fish(0, 0, 'straight', 1, 'clownfish'), y: 262, sp: 0.7, ph: 0, s: 1.6 },
+        { f: new Game.entities.Fish(0, 0, 'straight', -1, 'angelfish'), y: 336, sp: 0.5, ph: 300, s: 1.5 },
+        { f: new Game.entities.Fish(0, 0, 'straight', 1, 'tropical'), y: 178, sp: 0.45, ph: 520, s: 1.2 },
+      ];
+    }
+    for (var i = 0; i < titleFish.length; i++) {
+      var tf = titleFish[i], f = tf.f;
+      var span = W + 160;
+      var x = ((t * tf.sp + tf.ph) % span) - 80;
+      if (f.dir === -1) x = W - x;
+      f.timer = t;
+      f.x = 0;
+      f.y = 0;
+      c.save();
+      c.translate(x, tf.y + Math.sin(t * 0.03 + i * 2) * 6);
+      c.scale(tf.s, tf.s);
+      f.draw(c, f.w / 2, f.h / 2);
+      c.restore();
+    }
+  }
+
+  /* ---- Title Screen ---- */
+  function drawTitleScreen(c) {
+    titleAnimTimer++;
+    var t = titleAnimTimer;
+
+    drawSeaBackdrop(c, t);
+    drawTitleFish(c, t);
+
+    /* Momoko swimming on the spot at the left, trailing bubbles */
+    var mx = 160, my = 286 + Math.sin(t * 0.04) * 10;
+    for (var bb = 0; bb < 7; bb++) {
+      var age = (t + bb * 17) % 120;
+      c.save();
+      c.globalAlpha = (1 - age / 120) * 0.7;
+      c.strokeStyle = '#d8f4ff';
+      c.lineWidth = 1.2;
+      c.beginPath();
+      c.arc(mx + 14 + Math.sin(age * 0.12 + bb) * 5, my - 10 - age * 0.9, 2 + (bb % 3), 0, Math.PI * 2);
+      c.stroke();
+      c.restore();
+    }
+    c.save();
+    c.translate(mx, my);
+    c.rotate(0.08 + Math.sin(t * 0.03) * 0.08);
+    c.scale(2.8, 2.8);
+    if (Game.entities && Game.entities.drawMomokoSprite) {
+      Game.entities.drawMomokoSprite(c, -14, -17, Game.customization, Math.floor(t / 8) % 4);
+    }
+    c.restore();
+
+    drawReefForeground(c, t);
+
+    /* Logo title */
+    drawLogoText(c, Game.i18n.t('title'), W / 2, 92, 44, t);
 
     /* Subtitle */
-    c.fillStyle = '#88aacc';
-    c.font = '14px "M PLUS Rounded 1c", sans-serif';
+    c.save();
+    c.font = 'bold 15px ' + FONT;
     c.textAlign = 'center';
-    c.fillText(Game.i18n.t('titleSubtitle'), W / 2, 140);
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    c.lineWidth = 4;
+    c.strokeStyle = 'rgba(6, 30, 60, 0.8)';
+    c.strokeText(Game.i18n.t('titleSubtitle'), W / 2, 142);
+    c.fillStyle = '#cdeeff';
+    c.fillText(Game.i18n.t('titleSubtitle'), W / 2, 142);
+    c.restore();
 
     /* Buttons */
     drawButton(c, Game.i18n.t('play'), W / 2 - 90, 200, 180, 44, false, 'primary');
@@ -224,7 +369,7 @@
     /* Version stamp (bottom-right) – helps us know which build is running */
     if (Game.VERSION) {
       c.save();
-      c.fillStyle = '#4a6a8a';
+      c.fillStyle = 'rgba(255, 255, 255, 0.55)';
       c.font = '11px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'right';
       c.textBaseline = 'alphabetic';
@@ -528,92 +673,209 @@
     c.restore();
   }
 
-  /* ---- Game Over Screen ---- */
+  /* ---- Game Over Screen ----
+     Gentle rather than harsh: a calm deep-blue wash, Momoko bobbing with
+     a few slow bubbles, and an encouraging line above the retry button. */
+  var gameOverTimer = 0;
   function drawGameOver(c) {
+    gameOverTimer++;
+    var t = gameOverTimer;
     c.save();
-    c.fillStyle = 'rgba(20, 0, 0, 0.85)';
+    c.fillStyle = 'rgba(12, 30, 64, 0.8)';
+    c.fillRect(0, 0, W, H);
+    var vg = c.createRadialGradient(W / 2, 220, 40, W / 2, 220, 420);
+    vg.addColorStop(0, 'rgba(120, 180, 255, 0.16)');
+    vg.addColorStop(1, 'rgba(4, 10, 30, 0.45)');
+    c.fillStyle = vg;
     c.fillRect(0, 0, W, H);
 
-    c.fillStyle = '#ff3344';
-    c.font = 'bold 40px "M PLUS Rounded 1c", sans-serif';
-    c.textAlign = 'center';
-    c.fillText(Game.i18n.t('gameOver'), W / 2, 160);
+    /* Slow bubbles rising past her */
+    for (var b = 0; b < 8; b++) {
+      var age = (t * 0.6 + b * 37) % 220;
+      c.globalAlpha = Math.min(1, (220 - age) / 60) * 0.5;
+      c.strokeStyle = '#cfeaff';
+      c.lineWidth = 1.2;
+      c.beginPath();
+      c.arc(W / 2 - 70 + b * 20 + Math.sin(age * 0.05 + b) * 6, 300 - age, 2 + (b % 3), 0, Math.PI * 2);
+      c.stroke();
+    }
+    c.globalAlpha = 1;
 
-    drawButton(c, Game.i18n.t('tryAgain'), W / 2 - 90, 240, 180, 48, false, 'soft');
+    /* Momoko, a little sleepy-bob */
+    if (Game.entities && Game.entities.drawMomokoSprite) {
+      c.save();
+      c.translate(W / 2, 222 + Math.sin(t * 0.035) * 5);
+      c.rotate(Math.sin(t * 0.02) * 0.06);
+      c.scale(2.4, 2.4);
+      Game.entities.drawMomokoSprite(c, -14, -17, Game.customization, 0);
+      c.restore();
+    }
+
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    fitFont(c, Game.i18n.t('gameOver'), W - 80, 40, 'bold');
+    c.lineWidth = 7;
+    c.strokeStyle = '#2b2458';
+    c.strokeText(Game.i18n.t('gameOver'), W / 2, 104);
+    c.fillStyle = '#ffd3e0';
+    c.fillText(Game.i18n.t('gameOver'), W / 2, 104);
+
+    fitFont(c, Game.i18n.t('gameOverCheer'), W - 80, 18, 'bold');
+    c.lineWidth = 4;
+    c.strokeStyle = 'rgba(10, 24, 56, 0.9)';
+    c.strokeText(Game.i18n.t('gameOverCheer'), W / 2, 150);
+    c.fillStyle = '#bfe4ff';
+    c.fillText(Game.i18n.t('gameOverCheer'), W / 2, 150);
+
+    drawButton(c, Game.i18n.t('tryAgain'), W / 2 - 100, 306, 200, 48, false, 'primary');
     c.restore();
   }
 
   function handleGameOverClick(mx, my) {
-    if (hitButton(mx, my, W / 2 - 90, 240, 180, 48)) { Game.audio.play('select'); return 'retry'; }
+    if (hitButton(mx, my, W / 2 - 100, 306, 200, 48)) {
+      Game.audio.play('select');
+      gameOverTimer = 0;
+      return 'retry';
+    }
     return null;
   }
 
   /* ---- Victory Screen ---- */
   var victoryParticles = [];
   var victoryTimer = 0;
+  var victoryFriends = null;
 
   function drawVictory(c) {
     victoryTimer++;
+    var t = victoryTimer;
 
     c.save();
-    c.fillStyle = 'rgba(0, 10, 30, 0.85)';
-    c.fillRect(0, 0, W, H);
+    drawSeaBackdrop(c, t, true);
 
-    /* Fireworks particles */
-    if (victoryTimer % 10 === 0) {
-      var fx = 100 + Math.random() * 600;
-      var fy = 100 + Math.random() * 200;
-      var colors = ['#ff4466', '#44ff66', '#4488ff', '#ffcc33', '#ff66cc', '#66ffcc'];
-      for (var i = 0; i < 12; i++) {
-        var angle = (Math.PI * 2 * i) / 12;
-        var sp = 1 + Math.random() * 2;
-        victoryParticles.push({
-          x: fx, y: fy,
-          vx: Math.cos(angle) * sp,
-          vy: Math.sin(angle) * sp,
-          life: 40 + Math.random() * 20,
-          maxLife: 60,
-          color: colors[Math.floor(Math.random() * colors.length)],
-          size: 2 + Math.random() * 3
-        });
+    /* Rising glowing bubbles and sparkles from the reef */
+    if (t % 5 === 0) {
+      var spark = Math.random() < 0.35;
+      victoryParticles.push({
+        x: 40 + Math.random() * (W - 80),
+        y: H - 20,
+        vy: -(0.6 + Math.random() * 1.1),
+        ph: Math.random() * 6.28,
+        r: spark ? 2 + Math.random() * 1.5 : 3 + Math.random() * 6,
+        spark: spark,
+        color: ['#ffd24a', '#ff8fd0', '#7ff0ff', '#b6ff8a'][Math.floor(Math.random() * 4)],
+        life: 260,
+      });
+    }
+    c.globalCompositeOperation = 'lighter';
+    for (var p = victoryParticles.length - 1; p >= 0; p--) {
+      var part = victoryParticles[p];
+      part.y += part.vy;
+      part.ph += 0.05;
+      part.life--;
+      if (part.life <= 0 || part.y < -20) { victoryParticles.splice(p, 1); continue; }
+      var px = part.x + Math.sin(part.ph) * 8;
+      var a = Math.min(1, part.life / 60);
+      if (part.spark) {
+        var tw = 0.6 + 0.4 * Math.sin(part.ph * 4);
+        var R = part.r * (1.8 + tw);
+        c.globalAlpha = a * 0.25;
+        c.fillStyle = part.color;
+        c.beginPath();
+        c.arc(px, part.y, part.r * 2.2, 0, Math.PI * 2);
+        c.fill();
+        /* Four-point twinkle star */
+        c.globalAlpha = a * tw;
+        c.beginPath();
+        c.moveTo(px, part.y - R);
+        c.quadraticCurveTo(px, part.y, px + R, part.y);
+        c.quadraticCurveTo(px, part.y, px, part.y + R);
+        c.quadraticCurveTo(px, part.y, px - R, part.y);
+        c.quadraticCurveTo(px, part.y, px, part.y - R);
+        c.fill();
+      } else {
+        c.globalAlpha = a * 0.18;
+        c.fillStyle = '#9fe6ff';
+        c.beginPath();
+        c.arc(px, part.y, part.r * 1.8, 0, Math.PI * 2);
+        c.fill();
+        c.globalAlpha = a * 0.6;
+        c.strokeStyle = '#d8f6ff';
+        c.lineWidth = 1.2;
+        c.beginPath();
+        c.arc(px, part.y, part.r, 0, Math.PI * 2);
+        c.stroke();
+        c.fillStyle = '#ffffff';
+        c.beginPath();
+        c.arc(px - part.r * 0.35, part.y - part.r * 0.35, part.r * 0.25, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = 'source-over';
+
+    drawReefForeground(c, t);
+
+    /* Friends celebrating around her: Kitty Corn, Oliver and Bob */
+    if (Game.entities && Game.entities.KittyCorn) {
+      if (!victoryFriends) {
+        victoryFriends = [
+          { e: new Game.entities.KittyCorn(0, 0), x: 212, y: 262, s: 2 },
+          { e: new Game.entities.Oliver(0, 0), x: 560, y: 282, s: 2 },
+          { e: new Game.entities.Bob(0, 0), x: 640, y: 168, s: 1.4 },
+        ];
+      }
+      for (var f = 0; f < victoryFriends.length; f++) {
+        var fr = victoryFriends[f];
+        fr.e.update();
+        c.save();
+        c.translate(fr.x, fr.y);
+        c.scale(fr.s, fr.s);
+        fr.e.draw(c, fr.e.w / 2, fr.e.h / 2);
+        c.restore();
       }
     }
 
-    for (var p = victoryParticles.length - 1; p >= 0; p--) {
-      var part = victoryParticles[p];
-      part.x += part.vx;
-      part.y += part.vy;
-      part.vy += 0.03;
-      part.life--;
-      if (part.life <= 0) { victoryParticles.splice(p, 1); continue; }
-      c.globalAlpha = part.life / part.maxLife;
-      c.fillStyle = part.color;
-      c.fillRect(part.x - part.size / 2, part.y - part.size / 2, part.size, part.size);
+    /* Momoko dancing in celebration */
+    if (Game.entities && Game.entities.drawMomokoFloss) {
+      c.save();
+      c.translate(W / 2, 290 - Math.abs(Math.sin(t * 0.09)) * 6);
+      c.scale(2.8, 2.8);
+      Game.entities.drawMomokoFloss(c, -14, -17, Game.customization, t * 0.18);
+      c.restore();
     }
-    c.globalAlpha = 1;
 
-    c.fillStyle = '#ffcc33';
-    c.font = 'bold 44px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    fitFont(c, Game.i18n.t('victory'), W - 80, 50, 'bold');
+    c.lineWidth = 8;
+    c.strokeStyle = '#4a1f00';
+    c.strokeText(Game.i18n.t('victory'), W / 2, 72);
+    c.fillStyle = '#ffd24a';
     c.shadowColor = '#ffaa00';
-    c.shadowBlur = 20;
-    c.fillText(Game.i18n.t('victory'), W / 2, 130);
+    c.shadowBlur = 18;
+    c.fillText(Game.i18n.t('victory'), W / 2, 72);
     c.shadowBlur = 0;
 
-    c.fillStyle = '#88ddff';
-    c.font = '20px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(Game.i18n.t('savedOcean'), W / 2, 180);
+    fitFont(c, Game.i18n.t('savedOcean'), W - 80, 22, 'bold');
+    c.lineWidth = 4;
+    c.strokeStyle = 'rgba(6, 30, 60, 0.85)';
+    c.strokeText(Game.i18n.t('savedOcean'), W / 2, 126);
+    c.fillStyle = '#bff0ff';
+    c.fillText(Game.i18n.t('savedOcean'), W / 2, 126);
 
-    c.fillStyle = '#ccddee';
-    c.font = '16px "M PLUS Rounded 1c", sans-serif';
-    c.fillText(Game.i18n.t('thanks'), W / 2, 220);
+    c.font = 'bold 16px ' + FONT;
+    c.strokeText(Game.i18n.t('thanks'), W / 2, 158);
+    c.fillStyle = '#ffffff';
+    c.fillText(Game.i18n.t('thanks'), W / 2, 158);
 
-    drawButton(c, Game.i18n.t('playAgain'), W / 2 - 90, 280, 180, 48, false, 'primary');
+    drawButton(c, Game.i18n.t('playAgain'), W / 2 - 100, 394, 200, 48, false, 'primary');
     c.restore();
   }
 
   function handleVictoryClick(mx, my) {
-    if (hitButton(mx, my, W / 2 - 90, 280, 180, 48)) {
+    if (hitButton(mx, my, W / 2 - 100, 394, 200, 48)) {
       Game.audio.play('select');
       victoryParticles = [];
       victoryTimer = 0;
@@ -1333,30 +1595,15 @@
   function drawIntroScreen(c) {
     introAnimTimer++;
 
-    /* Background – same deep-sea gradient as title for continuity */
-    var grad = c.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, '#0a1628');
-    grad.addColorStop(0.5, '#0d2847');
-    grad.addColorStop(1, '#162e50');
-    c.fillStyle = grad;
-    c.fillRect(0, 0, W, H);
+    /* Background – same sea backdrop as the title for continuity */
+    drawSeaBackdrop(c, introAnimTimer);
 
-    /* Drifting ambient bubbles */
-    for (var i = 0; i < titleBubbles.length; i++) {
-      var b = titleBubbles[i];
-      b.wobble += 0.02;
-      b.y -= b.speed * 0.4;
-      if (b.y < -10) { b.y = H + 10; b.x = Math.random() * W; }
-      c.save();
-      c.globalAlpha = 0.2;
-      c.fillStyle = '#66bbee';
-      c.beginPath();
-      c.arc(b.x + Math.sin(b.wobble) * 15, b.y, b.r, 0, Math.PI * 2);
-      c.fill();
-      c.restore();
-    }
-
-    /* Momoko portrait (left) */
+    /* Momoko portrait (left) on a soft glow */
+    var pg = c.createRadialGradient(120, 250, 10, 120, 250, 110);
+    pg.addColorStop(0, 'rgba(255, 170, 210, 0.3)');
+    pg.addColorStop(1, 'rgba(255, 170, 210, 0)');
+    c.fillStyle = pg;
+    c.fillRect(10, 140, 220, 220);
     c.save();
     c.translate(120, 200);
     c.scale(3.2, 3.2);
@@ -1366,22 +1613,45 @@
     c.restore();
 
     /* Title */
-    c.fillStyle = '#ffcc66';
-    c.font = 'bold 28px "M PLUS Rounded 1c", sans-serif';
+    c.save();
+    c.font = 'bold 28px ' + FONT;
     c.textAlign = 'center';
-    c.shadowColor = '#884400';
-    c.shadowBlur = 6;
+    c.lineJoin = 'round';
+    c.lineWidth = 6;
+    c.strokeStyle = '#4a2200';
+    c.strokeText(Game.i18n.t('introTitle'), W / 2, 46);
+    c.fillStyle = '#ffd27a';
+    c.shadowColor = 'rgba(255, 170, 60, 0.6)';
+    c.shadowBlur = 10;
     c.fillText(Game.i18n.t('introTitle'), W / 2, 46);
-    c.shadowBlur = 0;
+    c.restore();
 
-    /* Story panel */
+    /* Story panel – glassy gradient card with a double edge and gloss */
     var panelX = 240, panelY = 72, panelW = 540, panelH = 320;
-    c.fillStyle = 'rgba(8, 24, 48, 0.75)';
-    roundRect(c, panelX, panelY, panelW, panelH, 10);
+    c.save();
+    c.shadowColor = 'rgba(0, 0, 0, 0.4)';
+    c.shadowBlur = 16;
+    c.shadowOffsetY = 4;
+    var pnl = c.createLinearGradient(0, panelY, 0, panelY + panelH);
+    pnl.addColorStop(0, 'rgba(18, 62, 108, 0.9)');
+    pnl.addColorStop(1, 'rgba(6, 22, 50, 0.92)');
+    c.fillStyle = pnl;
+    roundRect(c, panelX, panelY, panelW, panelH, 14);
     c.fill();
-    c.strokeStyle = '#2a5580';
+    c.restore();
+    var gloss = c.createLinearGradient(0, panelY, 0, panelY + 40);
+    gloss.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+    gloss.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    c.fillStyle = gloss;
+    roundRect(c, panelX + 3, panelY + 3, panelW - 6, 40, 11);
+    c.fill();
+    c.strokeStyle = 'rgba(124, 232, 255, 0.75)';
     c.lineWidth = 2;
-    roundRect(c, panelX, panelY, panelW, panelH, 10);
+    roundRect(c, panelX, panelY, panelW, panelH, 14);
+    c.stroke();
+    c.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    c.lineWidth = 1;
+    roundRect(c, panelX + 5, panelY + 5, panelW - 10, panelH - 10, 10);
     c.stroke();
 
     /* Story text */
@@ -1412,12 +1682,11 @@
   var beachKitty = null;
   var beachScene = null;
 
-  /* Time-of-day palettes – each set drives sky gradient, distant hills,
+  /* Time-of-day palettes – each set drives sky gradient, horizon sea,
      sand, water, and sun colour so the whole frame stays cohesive. */
   var BEACH_PALETTES = {
     morning: {
       sky: ['#aedcf2', '#dbeefb', '#fff1d4'],
-      hills: '#7aa6c5',
       sand: ['#f3dfa6', '#ecca80', '#d8b070'],
       water: '#1e8fc8',
       waterMid: '#39a3d8',
@@ -1428,7 +1697,6 @@
     },
     noon: {
       sky: ['#4a9ee6', '#89c6f2', '#ffd89b'],
-      hills: '#7fa8c9',
       sand: ['#f0d590', '#e8c478', '#d4a968'],
       water: '#1e7bb8',
       waterMid: '#2e95cc',
@@ -1439,11 +1707,10 @@
     },
     sunset: {
       sky: ['#ff7e5f', '#feb47b', '#ffd29a'],
-      hills: '#9a5e7e',
       sand: ['#f4c282', '#e69e63', '#c47a4a'],
-      water: '#3a4a8a',
-      waterMid: '#5a6cae',
-      waterLight: '#8a9acf',
+      water: '#24508e',
+      waterMid: '#3a6eac',
+      waterLight: '#7aa8d8',
       sun: '#ffd06b',
       sunCore: '#ffb766',
       sunRays: 'rgba(255,180,110,0.18)',
@@ -1880,6 +2147,58 @@
     c.restore();
   }
 
+  /* Twinkling sun glints on a strip of sea. Positions come from the index
+     so nothing is re-randomised per frame; glints near sunX are brighter. */
+  function drawSeaSparkles(c, t, sunX, y0, y1, count) {
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    c.fillStyle = '#ffffff';
+    for (var i = 0; i < count; i++) {
+      var gx = (i * 137 + 23) % W;
+      var gy = y0 + ((i * 53) % 97) / 97 * (y1 - y0);
+      var tw = Math.sin(t * 0.06 + i * 2.3);
+      if (tw <= 0.2) continue;
+      var near = Math.max(0, 1 - Math.abs(gx - sunX) / 260);
+      c.globalAlpha = (tw - 0.2) * (0.35 + near * 0.6);
+      c.beginPath();
+      c.ellipse(gx + Math.sin(t * 0.01 + i) * 4, gy, 3 + near * 4, 0.9, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+  }
+
+  /* Player-controlled Momoko walking on the sand. Painted in y order
+     with the other beach actors. Scaled 2x so she matches the size of
+     kids / beach props. The sprite's animFrame parameter drives her
+     flipper/foot kick timing. */
+  function drawBeachMomoko(c, mm) {
+    /* Shadow on sand */
+    c.save();
+    c.fillStyle = 'rgba(0,0,0,0.22)';
+    var shadowSquash = mm.grounded ? 1 : 0.6;
+    c.beginPath();
+    c.ellipse(mm.x, BEACH_GROUND_Y + 10, 16 * shadowSquash, 4 * shadowSquash, 0, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+
+    c.save();
+    c.translate(mm.x, mm.y);
+    c.scale(2, 2);
+    if (mm.facing === -1) c.scale(-1, 1);
+    /* The sprite's natural origin is its top-left, so shift up by full
+       sprite height (34) to plant feet on the ground line. */
+    if (Game.entities && Game.entities.drawMomokoSprite) {
+      var frame = mm.moving ? Math.floor(mm.walkPhase) : 0;
+      Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, frame);
+    }
+    /* Companion crab trails behind her opposite facing direction */
+    if (Game.entities && Game.entities.drawCrabPet &&
+        Game.customization.crab && Game.customization.crab !== 'none') {
+      Game.entities.drawCrabPet(c, -22, -2, Game.customization.crab, beachTimer);
+    }
+    c.restore();
+  }
+
   function drawBeachCutscene(c, wolfe) {
     beachTimer++;
     var t = beachTimer;
@@ -1927,17 +2246,17 @@
     c.arc(sunX, sunY, 32, 0, Math.PI * 2);
     c.fill();
 
-    /* Distant hills */
-    c.fillStyle = pal.hills;
-    c.beginPath();
-    c.moveTo(0, H * 0.58);
-    c.bezierCurveTo(120, H * 0.5, 200, H * 0.55, 320, H * 0.53);
-    c.bezierCurveTo(460, H * 0.5, 560, H * 0.57, 700, H * 0.54);
-    c.bezierCurveTo(760, H * 0.53, 800, H * 0.56, 800, H * 0.58);
-    c.lineTo(800, H * 0.6);
-    c.lineTo(0, H * 0.6);
-    c.closePath();
-    c.fill();
+    /* Horizon sea – lighter at the horizon, with sun glints twinkling
+       across it (strongest under the sun) */
+    var seaTop = H * 0.52, seaBot = H * 0.6;
+    var seaGrad = c.createLinearGradient(0, seaTop, 0, seaBot);
+    seaGrad.addColorStop(0, pal.waterLight);
+    seaGrad.addColorStop(1, pal.water);
+    c.fillStyle = seaGrad;
+    c.fillRect(0, seaTop, W, seaBot - seaTop);
+    c.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    c.fillRect(0, seaTop, W, 1);
+    drawSeaSparkles(c, t, sunX, seaTop + 3, seaBot - 2, 34);
 
     /* Clouds – tinted slightly to match palette */
     c.fillStyle = sc.time === 'sunset' ? '#ffd0b0' : '#ffffff';
@@ -2020,17 +2339,11 @@
     drawBeachTowel(c, 160, H * 0.76, 70, 28, '#ee4466', '#ffffff');
     drawBeachTowel(c, 420, H * 0.8, 64, 26, '#44aadd', '#ffff66');
 
-    /* Umbrella + accompanying towel */
-    drawBeachUmbrella(c, 660, H * 0.84);
+    /* Starfish scattered on sand (flat, so always underneath) */
+    drawStarfish(c, 140, H * 0.84, 6, 0.4, '#e66442');
+    drawStarfish(c, 500, H * 0.78, 5, 1.1, '#e6a84a');
+    drawStarfish(c, 720, H * 0.77, 5, 0.7, '#d94a5a');
 
-    /* Sandcastle */
-    drawSandcastle(c, 320, H * 0.82);
-
-    /* Beach ball – bouncing on the sand */
-    if (sc.hasBeachBall) {
-      var ballY = H * 0.86 - Math.abs(Math.sin(t * 0.06)) * 30;
-      drawBeachBall(c, sc.ballX, ballY, t * 0.04);
-    }
     /* Frisbee – arcing through the sky */
     if (sc.hasFrisbee) {
       var frX = (sc.frisbeeX + (t * 1.2) % 600) - 100;
@@ -2038,24 +2351,31 @@
       drawFrisbee(c, frX, frY, t * 0.2);
     }
 
-    /* Starfish scattered on sand */
-    drawStarfish(c, 140, H * 0.84, 6, 0.4, '#e66442');
-    drawStarfish(c, 500, H * 0.78, 5, 1.1, '#e6a84a');
-    drawStarfish(c, 720, H * 0.77, 5, 0.7, '#d94a5a');
-
-    /* Kids – count and colours vary per visit */
-    for (var ki = 0; ki < sc.kids.length; ki++) {
-      var kid = sc.kids[ki];
-      drawKid(c, kid.x, H * kid.y, kid.color, t * 0.08 + kid.bobOffset);
+    /* Standing props and characters, painted back-to-front by the y of
+       their feet so whoever is nearer the shore overlaps the rest. */
+    var actors = [
+      { y: H * 0.84, fn: function () { drawBeachUmbrella(c, 660, H * 0.84); } },
+      { y: H * 0.82, fn: function () { drawSandcastle(c, 320, H * 0.82); } },
+    ];
+    if (sc.hasBeachBall) {
+      actors.push({ y: H * 0.86, fn: function () {
+        drawBeachBall(c, sc.ballX, H * 0.86 - Math.abs(Math.sin(t * 0.06)) * 30, t * 0.04);
+      } });
     }
-
-    /* Crabs walking on sand */
-    for (var cb = 0; cb < sc.crabs.length; cb++) {
-      var crab = sc.crabs[cb];
-      var crabX = crab.baseX + Math.sin(t * 0.01 + crab.phase) * 30 * crab.dir;
-      var crabY = H * 0.88 + Math.sin(t * 0.04 + crab.phase) * 1;
-      drawCrab(c, crabX, crabY, t * 0.2 + crab.phase);
+    function kidActor(kid) {
+      return { y: H * kid.y, fn: function () { drawKid(c, kid.x, H * kid.y, kid.color, t * 0.08 + kid.bobOffset); } };
     }
+    for (var ki = 0; ki < sc.kids.length; ki++) actors.push(kidActor(sc.kids[ki]));
+    function crabActor(crab) {
+      return { y: H * 0.88, fn: function () {
+        var crabX = crab.baseX + Math.sin(t * 0.01 + crab.phase) * 30 * crab.dir;
+        drawCrab(c, crabX, H * 0.88 + Math.sin(t * 0.04 + crab.phase) * 1, t * 0.2 + crab.phase);
+      } };
+    }
+    for (var cb = 0; cb < sc.crabs.length; cb++) actors.push(crabActor(sc.crabs[cb]));
+    if (beachMomoko) actors.push({ y: BEACH_GROUND_Y + 10, fn: function () { drawBeachMomoko(c, beachMomoko); } });
+    actors.sort(function (p, q) { return p.y - q.y; });
+    for (var ac = 0; ac < actors.length; ac++) actors[ac].fn();
 
     /* Wolfe on beach */
     if (wolfe) {
@@ -2067,8 +2387,11 @@
     c.fillStyle = pal.water;
     c.fillRect(0, H * 0.93, W, H * 0.07);
 
-    /* Overlapping waves */
-    c.fillStyle = pal.waterMid;
+    /* Overlapping waves, each shaded darker toward the bottom edge */
+    var wgMid = c.createLinearGradient(0, H * 0.92, 0, H);
+    wgMid.addColorStop(0, pal.waterMid);
+    wgMid.addColorStop(1, pal.water);
+    c.fillStyle = wgMid;
     c.beginPath();
     c.moveTo(0, H * 0.93);
     for (var w1 = 0; w1 <= W; w1 += 6) {
@@ -2079,7 +2402,10 @@
     c.closePath();
     c.fill();
 
-    c.fillStyle = pal.waterLight;
+    var wgLight = c.createLinearGradient(0, H * 0.94, 0, H);
+    wgLight.addColorStop(0, pal.waterLight);
+    wgLight.addColorStop(1, pal.waterMid);
+    c.fillStyle = wgLight;
     c.beginPath();
     c.moveTo(0, H * 0.945);
     for (var w2 = 0; w2 <= W; w2 += 6) {
@@ -2111,39 +2437,7 @@
       c.arc(fdx, fdy, 1.5, 0, Math.PI * 2);
       c.fill();
     }
-
-    /* Player-controlled Momoko walking on the sand. Drawn after sand /
-       decor and before Kitty so she sits in the natural z-order. Scaled
-       2x so she matches the size of kids / beach props. The sprite's
-       animFrame parameter drives her flipper/foot kick timing. */
-    if (beachMomoko) {
-      var mm = beachMomoko;
-      /* Shadow on sand */
-      c.save();
-      c.fillStyle = 'rgba(0,0,0,0.22)';
-      var shadowSquash = mm.grounded ? 1 : 0.6;
-      c.beginPath();
-      c.ellipse(mm.x, BEACH_GROUND_Y + 10, 16 * shadowSquash, 4 * shadowSquash, 0, 0, Math.PI * 2);
-      c.fill();
-      c.restore();
-
-      c.save();
-      c.translate(mm.x, mm.y);
-      c.scale(2, 2);
-      if (mm.facing === -1) c.scale(-1, 1);
-      /* The sprite's natural origin is its top-left, so shift up by full
-         sprite height (34) to plant feet on the ground line. */
-      if (Game.entities && Game.entities.drawMomokoSprite) {
-        var frame = mm.moving ? Math.floor(mm.walkPhase) : 0;
-        Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, frame);
-      }
-      /* Companion crab trails behind her opposite facing direction */
-      if (Game.entities && Game.entities.drawCrabPet &&
-          Game.customization.crab && Game.customization.crab !== 'none') {
-        Game.entities.drawCrabPet(c, -22, -2, Game.customization.crab, beachTimer);
-      }
-      c.restore();
-    }
+    drawSeaSparkles(c, t, sunX, H * 0.955, H - 4, 22);
 
     /* Kitty Corn splashing at shore */
     if (!beachKitty && Game.entities && Game.entities.KittyCorn) {

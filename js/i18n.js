@@ -32,6 +32,7 @@
       /* ---- Game over / victory ---- */
       gameOver: 'Game Over',
       tryAgain: 'Try Again',
+      gameOverCheer: "Don't give up – Momoko believes in you!",
       victory: 'Victory!',
       savedOcean: 'You saved the ocean!',
       playAgain: 'Play Again',
@@ -178,6 +179,7 @@
       /* ---- ゲームオーバー / 勝利 ---- */
       gameOver: 'ゲームオーバー',
       tryAgain: 'もういちど',
+      gameOverCheer: 'あきらめないで！ モモコは きみを しんじてるよ！',
       victory: 'やったー！',
       savedOcean: 'うみをすくったよ！',
       playAgain: 'もういちど あそぶ',

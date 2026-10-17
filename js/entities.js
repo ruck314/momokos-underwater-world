@@ -1564,11 +1564,14 @@
   };
 
   /* ========== MONI (Boss) ========== */
+  var MONI_SCALE = 1.6;
   function Moni(x, y) {
     this.x = x;
     this.y = y;
-    this.w = 44;
-    this.h = 60;
+    /* Drawn at MONI_SCALE × her original 44×60 art so she towers over
+       the reef; the hitbox scales with her. */
+    this.w = Math.round(44 * MONI_SCALE);
+    this.h = Math.round(60 * MONI_SCALE);
     this.hp = 15;
     this.maxHp = 15;
     this.active = false; /* activated when player enters boss area */
@@ -1696,31 +1699,75 @@
       c.globalAlpha = Math.max(0, 1 - this.defeatTimer / 120);
     }
 
+    /* Dark-magenta aura pulsing behind her, with a few motes circling */
+    var acx = sx + this.w / 2, acy = sy + this.h * 0.45;
+    var pulse = 1 + Math.sin(this.timer * 0.07) * 0.08;
+    var ar = this.h * 0.85 * pulse;
+    var ag = c.createRadialGradient(acx, acy, ar * 0.15, acx, acy, ar);
+    ag.addColorStop(0, 'rgba(170, 30, 150, 0.45)');
+    ag.addColorStop(0.55, 'rgba(110, 20, 110, 0.22)');
+    ag.addColorStop(1, 'rgba(70, 10, 80, 0)');
+    c.fillStyle = ag;
+    c.fillRect(acx - ar, acy - ar, ar * 2, ar * 2);
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    c.fillStyle = '#d24ad8';
+    for (var mo = 0; mo < 6; mo++) {
+      var ma = this.timer * 0.025 + mo * Math.PI / 3;
+      c.globalAlpha = (0.35 + 0.25 * Math.sin(this.timer * 0.1 + mo)) * (this.defeated ? Math.max(0, 1 - this.defeatTimer / 120) : 1);
+      c.beginPath();
+      c.arc(acx + Math.cos(ma) * this.w * 0.62, acy + Math.sin(ma) * this.h * 0.42, 2.2, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+
+    /* The body art below is authored in the original 44×60 space */
+    c.translate(sx, sy);
+    c.scale(MONI_SCALE, MONI_SCALE);
+    sx = 0;
+    sy = 0;
+    var hairSway = Math.sin(this.tailPhase * 0.8 + 1) * 3;
+
+    /* Long back hair flowing behind her shoulders */
+    c.fillStyle = '#3f1a6a';
+    c.beginPath();
+    c.moveTo(sx + 8, sy + 4);
+    c.bezierCurveTo(sx + 0 + hairSway, sy + 18, sx + 2 + hairSway * 1.6, sy + 32, sx + 4 + hairSway * 2, sy + 40);
+    c.quadraticCurveTo(sx + 10 + hairSway, sy + 34, sx + 12, sy + 22);
+    c.lineTo(sx + 32, sy + 22);
+    c.quadraticCurveTo(sx + 34 + hairSway, sy + 34, sx + 40 + hairSway * 2, sy + 40);
+    c.bezierCurveTo(sx + 42 + hairSway * 1.6, sy + 32, sx + 44 + hairSway, sy + 18, sx + 36, sy + 4);
+    c.closePath();
+    c.fill();
+
     /* Tail – flowing bezier mermaid tail */
     c.fillStyle = '#7733aa';
-    var tailWave = Math.sin(this.tailPhase) * 6;
+    var tailWave = Math.sin(this.tailPhase) * 10;
+    /* The tail tip trails the mid-tail wave, so the whole fin swishes */
+    var tipX = Math.sin(this.tailPhase - 0.8) * 4;
     c.beginPath();
     c.moveTo(sx + 10, sy + 36);
     c.lineTo(sx + 34, sy + 36);
-    c.bezierCurveTo(sx + 34, sy + 44, sx + 30 + tailWave, sy + 50, sx + 36, sy + 58);
-    c.quadraticCurveTo(sx + 38, sy + 62, sx + 34, sy + 64);
-    c.lineTo(sx + 10, sy + 64);
-    c.quadraticCurveTo(sx + 6, sy + 62, sx + 8, sy + 58);
+    c.bezierCurveTo(sx + 34, sy + 44, sx + 30 + tailWave, sy + 50, sx + 36 + tipX, sy + 58);
+    c.quadraticCurveTo(sx + 38 + tipX, sy + 62, sx + 34 + tipX, sy + 64);
+    c.lineTo(sx + 10 + tipX, sy + 64);
+    c.quadraticCurveTo(sx + 6 + tipX, sy + 62, sx + 8 + tipX, sy + 58);
     c.bezierCurveTo(sx + 14 + tailWave, sy + 50, sx + 10, sy + 44, sx + 10, sy + 36);
     c.closePath();
     c.fill();
 
     /* Tail fin */
     c.fillStyle = '#6622aa';
+    var finY = tailWave * 0.6;
     c.beginPath();
-    c.moveTo(sx + 16, sy + 60);
-    c.quadraticCurveTo(sx + 6, sy + 66 + tailWave, sx + 2, sy + 64);
-    c.quadraticCurveTo(sx + 8, sy + 60, sx + 16, sy + 60);
+    c.moveTo(sx + 16 + tipX, sy + 60);
+    c.quadraticCurveTo(sx + 6 + tipX, sy + 66 + finY, sx + 1 + tipX * 1.4, sy + 65 + finY * 0.4);
+    c.quadraticCurveTo(sx + 8 + tipX, sy + 60, sx + 16 + tipX, sy + 60);
     c.fill();
     c.beginPath();
-    c.moveTo(sx + 28, sy + 60);
-    c.quadraticCurveTo(sx + 38, sy + 66 + tailWave, sx + 42, sy + 64);
-    c.quadraticCurveTo(sx + 36, sy + 60, sx + 28, sy + 60);
+    c.moveTo(sx + 28 + tipX, sy + 60);
+    c.quadraticCurveTo(sx + 38 + tipX, sy + 66 - finY, sx + 43 + tipX * 1.4, sy + 65 - finY * 0.4);
+    c.quadraticCurveTo(sx + 36 + tipX, sy + 60, sx + 28 + tipX, sy + 60);
     c.fill();
 
     /* Tail scales */
@@ -1771,14 +1818,14 @@
     /* Side hair strands */
     c.beginPath();
     c.moveTo(sx + 6, sy + 6);
-    c.bezierCurveTo(sx + 2, sy + 12, sx + 3, sy + 20, sx + 6, sy + 26);
+    c.bezierCurveTo(sx + 2 + hairSway * 0.5, sy + 12, sx + 3 + hairSway, sy + 20, sx + 6 + hairSway * 1.3, sy + 27);
     c.lineTo(sx + 10, sy + 24);
     c.bezierCurveTo(sx + 8, sy + 16, sx + 8, sy + 10, sx + 10, sy + 6);
     c.closePath();
     c.fill();
     c.beginPath();
     c.moveTo(sx + 38, sy + 6);
-    c.bezierCurveTo(sx + 42, sy + 12, sx + 41, sy + 20, sx + 38, sy + 26);
+    c.bezierCurveTo(sx + 42 + hairSway * 0.5, sy + 12, sx + 41 + hairSway, sy + 20, sx + 38 + hairSway * 1.3, sy + 27);
     c.lineTo(sx + 34, sy + 24);
     c.bezierCurveTo(sx + 36, sy + 16, sx + 36, sy + 10, sx + 34, sy + 6);
     c.closePath();

@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.6.0';
+  Game.VERSION = 'v1.7.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -701,12 +701,15 @@
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    /* Light rays */
+    /* Light rays – brightest just under the surface, fading with depth */
     ctx.save();
-    ctx.globalAlpha = 0.03;
+    var rayGrad = ctx.createLinearGradient(0, 0, 0, H);
+    rayGrad.addColorStop(0, 'rgba(150, 215, 255, 0.09)');
+    rayGrad.addColorStop(0.7, 'rgba(150, 215, 255, 0.025)');
+    rayGrad.addColorStop(1, 'rgba(150, 215, 255, 0)');
+    ctx.fillStyle = rayGrad;
     for (var r = 0; r < 6; r++) {
       var rx = 150 * r - camera.x * 0.05 + Math.sin(Date.now() * 0.0003 + r) * 20;
-      ctx.fillStyle = '#88ccff';
       ctx.beginPath();
       ctx.moveTo(rx, 0);
       ctx.lineTo(rx + 30, 0);
@@ -785,9 +788,24 @@
     /* Decorations */
     renderDecorations();
 
-    /* Ocean floor – undulating contour */
+    /* Platforms – coral-encrusted reef rocks. Drawn before the seafloor
+       so the sand laps over the base of grounded rocks. */
+    var nowT = Date.now();
+    for (var pl = 0; pl < level.platforms.length; pl++) {
+      var pf = level.platforms[pl];
+      var px = pf.x - camera.x;
+      var py = pf.y - camera.y;
+      if (px + pf.w < 0 || px > W) continue;
+      drawRockPlatform(ctx, px, py, pf.w, pf.h, pf.x, pf.y + pf.h >= level.floorY - 2, nowT);
+    }
+
+    /* Ocean floor – undulating sand, lit from above and darkening with depth */
     var floorBase = level.floorY - camera.y;
-    ctx.fillStyle = '#2a1a0a';
+    var sandGrad = ctx.createLinearGradient(0, floorBase - 8, 0, H);
+    sandGrad.addColorStop(0, '#8a7656');
+    sandGrad.addColorStop(0.35, '#5e4e39');
+    sandGrad.addColorStop(1, '#2e261d');
+    ctx.fillStyle = sandGrad;
     ctx.beginPath();
     ctx.moveTo(0, H + 10);
     for (var fx = 0; fx <= W; fx += 4) {
@@ -798,18 +816,22 @@
     ctx.lineTo(W, H + 10);
     ctx.closePath();
     ctx.fill();
-    /* Sand ripple layer */
-    ctx.fillStyle = '#3d2b12';
-    ctx.beginPath();
-    ctx.moveTo(0, H + 10);
-    for (var sx = 0; sx <= W; sx += 4) {
-      var swx = sx + camera.x;
-      var ripple = Math.sin(swx * 0.008) * 6 + Math.sin(swx * 0.02) * 3 + Math.sin(swx * 0.05) * 1.5;
-      ctx.lineTo(sx, floorBase + ripple + 2);
+    /* Sunlit lip along the crest and a couple of fainter sand ripples */
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (var rl = 0; rl < 3; rl++) {
+      ctx.strokeStyle = rl === 0 ? 'rgba(214, 196, 150, 0.55)' : 'rgba(180, 160, 120, 0.18)';
+      ctx.lineWidth = rl === 0 ? 1.5 : 1;
+      ctx.beginPath();
+      for (var sx = 0; sx <= W; sx += 4) {
+        var swx = sx + camera.x;
+        var ripple = Math.sin(swx * 0.008) * 6 + Math.sin(swx * 0.02) * 3 + (rl ? Math.sin(swx * 0.05 + rl) * 1.5 : 0);
+        if (sx === 0) ctx.moveTo(sx, floorBase + ripple + 1 + rl * 9);
+        else ctx.lineTo(sx, floorBase + ripple + 1 + rl * 9);
+      }
+      ctx.stroke();
     }
-    ctx.lineTo(W, H + 10);
-    ctx.closePath();
-    ctx.fill();
+    ctx.restore();
     /* Pebbles and starfish */
     ctx.save();
     var pebbleSeed = 42;
@@ -842,42 +864,98 @@
     }
     ctx.restore();
 
-    /* Caustic light patterns on floor */
+    /* Caustics – soft rings of focused sunlight drifting over the sand.
+       Cells are world-locked on a repeating strip; only their wobble
+       is animated. */
     ctx.save();
-    ctx.globalAlpha = 0.06;
-    ctx.fillStyle = '#ffffcc';
-    var causticTime = Date.now() * 0.0008;
-    for (var ci = 0; ci < 12; ci++) {
-      var cix = (ci * 70 + Math.sin(causticTime + ci * 1.3) * 40) % (W + 40) - 20;
-      var ciy = floorBase - 4 + Math.cos(causticTime * 0.7 + ci) * 3;
-      var ciw = 20 + Math.sin(causticTime + ci * 0.9) * 8;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgb(255, 244, 200)';
+    var causticTime = nowT * 0.001;
+    var CAUSTIC_SPAN = 1056;
+    for (var ci = 0; ci < 32; ci++) {
+      var cwx = ci * 33 + Math.sin(ci * 2.1) * 20 - camera.x + Math.sin(causticTime * 0.4 + ci) * 8;
+      var cix = ((cwx % CAUSTIC_SPAN) + CAUSTIC_SPAN) % CAUSTIC_SPAN - 60;
+      if (cix > W + 60) continue;
+      var ciy = floorBase + 9 + (ci % 3) * 8 + Math.sin(ci * 1.3) * 3;
+      var cir = 22 + (ci * 7) % 13;
       ctx.beginPath();
-      ctx.ellipse(cix, ciy, ciw, 4 + Math.sin(causticTime + ci) * 2, Math.sin(causticTime * 0.5 + ci) * 0.3, 0, Math.PI * 2);
-      ctx.fill();
+      var cpts = [];
+      for (var cj = 0; cj < 6; cj++) {
+        var cang = cj / 6 * Math.PI * 2;
+        var crr = cir * (0.65 + 0.35 * Math.sin(causticTime * 1.3 + ci * 2 + cj * 1.9));
+        cpts.push([cix + Math.cos(cang) * crr, ciy + Math.sin(cang) * crr * 0.3]);
+      }
+      ctx.moveTo((cpts[5][0] + cpts[0][0]) / 2, (cpts[5][1] + cpts[0][1]) / 2);
+      for (cj = 0; cj < 6; cj++) {
+        var cq = cpts[(cj + 1) % 6];
+        ctx.quadraticCurveTo(cpts[cj][0], cpts[cj][1], (cpts[cj][0] + cq[0]) / 2, (cpts[cj][1] + cq[1]) / 2);
+      }
+      /* Wide faint pass then a thin core, so the light reads soft */
+      ctx.globalAlpha = 0.04;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.globalAlpha = 0.07;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
     }
     ctx.restore();
 
-    /* Platforms – barnacle-crusted ocean rocks instead of orange blobs.
-       Each block is a weathered stone outcrop: dark base, a weathered
-       top face, faint crack lines, scattered barnacle clusters, and a
-       crown of algae / anemones up top so it reads as part of a reef. */
-    for (var pl = 0; pl < level.platforms.length; pl++) {
-      var pf = level.platforms[pl];
-      var px = pf.x - camera.x;
-      var py = pf.y - camera.y;
-      if (px + pf.w < 0 || px > W) continue;
-      drawRockPlatform(ctx, px, py, pf.w, pf.h, pf.x);
-    }
+    /* Light falloff toward the seabed */
+    var depthGrad = ctx.createLinearGradient(0, H * 0.5, 0, H);
+    depthGrad.addColorStop(0, 'rgba(6, 18, 38, 0)');
+    depthGrad.addColorStop(1, 'rgba(6, 18, 38, 0.28)');
+    ctx.fillStyle = depthGrad;
+    ctx.fillRect(0, H * 0.5, W, H * 0.5);
 
-    /* Water surface effect */
+    /* Water surface – two translucent wave bands with a bright crest
+       line and twinkling glints, seen from just below */
     var surfaceY = level.waterSurface - camera.y;
-    ctx.fillStyle = 'rgba(100, 200, 255, 0.3)';
-    for (var ws = -10; ws < W + 10; ws += 20) {
-      var wy = surfaceY + Math.sin(Date.now() * 0.002 + ws * 0.05) * 4;
+    var wt = nowT * 0.001;
+    var waveA = function (x) { var wx = x + camera.x; return surfaceY + Math.sin(wx * 0.022 + wt * 1.6) * 3 + Math.sin(wx * 0.051 - wt * 2.1) * 1.5; };
+    var waveB = function (x) { var wx = x + camera.x; return surfaceY + 4 + Math.sin(wx * 0.03 - wt * 1.9 + 1) * 2.5 + Math.sin(wx * 0.07 + wt * 2.6) * 1.2; };
+    ctx.save();
+    var airGrad = ctx.createLinearGradient(0, surfaceY - 40, 0, surfaceY);
+    airGrad.addColorStop(0, 'rgba(120, 200, 255, 0)');
+    airGrad.addColorStop(1, 'rgba(120, 200, 255, 0.1)');
+    ctx.fillStyle = airGrad;
+    ctx.beginPath();
+    ctx.moveTo(0, surfaceY - 40);
+    for (var wa = 0; wa <= W + 8; wa += 8) ctx.lineTo(wa, waveA(wa));
+    ctx.lineTo(W + 8, surfaceY - 40);
+    ctx.closePath();
+    ctx.fill();
+    var bands = [[waveA, 18, 'rgba(110, 205, 255, 0.34)'], [waveB, 10, 'rgba(185, 238, 255, 0.3)']];
+    for (var bnd = 0; bnd < bands.length; bnd++) {
+      var wf = bands[bnd][0], depth = bands[bnd][1];
+      var bandGrad = ctx.createLinearGradient(0, surfaceY - 4, 0, surfaceY + depth + 4);
+      bandGrad.addColorStop(0, bands[bnd][2]);
+      bandGrad.addColorStop(1, 'rgba(110, 205, 255, 0)');
+      ctx.fillStyle = bandGrad;
       ctx.beginPath();
-      ctx.arc(ws + camera.x % 20, wy, 12, 0, Math.PI);
+      for (var wb = 0; wb <= W + 8; wb += 8) ctx.lineTo(wb, wf(wb));
+      for (wb = W + 8; wb >= 0; wb -= 8) ctx.lineTo(wb, wf(wb) + depth);
+      ctx.closePath();
       ctx.fill();
     }
+    ctx.strokeStyle = 'rgba(225, 250, 255, 0.7)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    for (var wc = 0; wc <= W + 8; wc += 8) {
+      if (wc === 0) ctx.moveTo(wc, waveA(wc)); else ctx.lineTo(wc, waveA(wc));
+    }
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = '#e8fbff';
+    for (var gl = 0; gl < 16; gl++) {
+      var gx = ((gl * 61 - camera.x) % 860 + 860) % 860 - 30;
+      var ga = Math.sin(wt * 2 + gl * 1.7);
+      if (ga <= 0 || gx > W + 10) continue;
+      ctx.globalAlpha = ga * 0.6;
+      ctx.beginPath();
+      ctx.ellipse(gx, waveA(gx) + 1.5, 5, 1.1, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
 
     /* Pickups */
     for (var pk = 0; pk < pickups.length; pk++) {
@@ -956,166 +1034,310 @@
     ctx.fillRect(0, 0, W, H);
   }
 
-  /* Barnacle-crusted rock outcrop used as a collision platform. Looks
-     like a weathered reef boulder rather than an orange blob: stone
-     gradient body, a lighter weathered top, hairline cracks, barnacle
-     clusters, and a crown of algae / anemone tufts. `seed` (world-x)
-     deterministically shuffles the details so each rock looks distinct
-     without flickering as the camera scrolls. */
-  function drawRockPlatform(c, px, py, pw, ph, seed) {
-    var cx = px + pw / 2;
-    var cy = py + ph / 2;
-    var hw = pw / 2;
-    var hh = ph / 2;
+  /* Reef rock palettes – warm / pastel coral-encrusted stone. `patch` are
+     the crust colours dabbed over the body, `grow` the colours used for
+     the fans, tubes and anemones on top. */
+  var REEF_PALETTES = [
+    { light: '#ffb7a8', mid: '#de7a7c', dark: '#6e3150', rim: '#ffe4da', patch: ['#ffd27a', '#c9a0ff', '#8fe3cf'], grow: ['#ff6f91', '#ffd24a', '#b77dff'] },
+    { light: '#ffd49e', mid: '#de9860', dark: '#6f4034', rim: '#fff1cf', patch: ['#ff9bb8', '#a6e2ff', '#c7f08a'], grow: ['#ff7a5c', '#ff8fd0', '#6fd7ff'] },
+    { light: '#dbbaff', mid: '#9f7ad8', dark: '#43306e', rim: '#f3e6ff', patch: ['#ffb0d0', '#ffe08a', '#8fe3cf'], grow: ['#ff9ec8', '#ffd24a', '#7ee2c0'] },
+    { light: '#a9eedb', mid: '#5db6a6', dark: '#24525f', rim: '#e2fff5', patch: ['#ffb3c8', '#ffd27a', '#d0b0ff'], grow: ['#ff6f91', '#ffa94d', '#c77dff'] },
+  ];
 
-    /* Deterministic pseudo-random so rocks stay stable as the camera
-       scrolls (don't use Math.random here). */
-    function rand(n) {
+  /* Seeded layouts for each platform, built once on first draw so the
+     reef never flickers and no Math.random() runs per frame. Keyed by the
+     platform's rect; collision still uses the plain rect. */
+  var reefCache = {};
+
+  function buildReefLayout(pw, ph, seed, grounded) {
+    var n = 0;
+    function rand() {
+      n++;
       var v = Math.sin((seed + n * 12.9898) * 78.233) * 43758.5453;
       return v - Math.floor(v);
     }
+    var L = { pal: REEF_PALETTES[Math.floor(rand() * REEF_PALETTES.length)], pts: [], topN: 0, patches: [], dots: [], barnacles: [], grow: [] };
+    var r = Math.min(16, pw * 0.35, ph * 0.45);
+    var amp = Math.min(6, Math.min(pw, ph) * 0.12);
 
-    /* Drop-shadow under the rock so it feels seated on the reef */
-    c.save();
-    c.globalAlpha = 0.35;
-    c.fillStyle = '#05101c';
+    /* Outline: rounded rect traced clockwise with a little lumpy noise.
+       Top edge first (its point count is kept for the rim highlight). */
+    var steps = Math.max(3, Math.round((pw - 2 * r) / 12));
+    var a, k;
+    for (k = 0; k <= 4; k++) {
+      a = Math.PI + (k / 4) * Math.PI / 2;
+      L.pts.push([r + Math.cos(a) * r, r + Math.sin(a) * r]);
+    }
+    for (k = 1; k < steps; k++) {
+      L.pts.push([r + (pw - 2 * r) * k / steps, (rand() - 0.6) * amp]);
+    }
+    for (k = 0; k <= 4; k++) {
+      a = -Math.PI / 2 + (k / 4) * Math.PI / 2;
+      L.pts.push([pw - r + Math.cos(a) * r, r + Math.sin(a) * r]);
+    }
+    L.topN = L.pts.length;
+    var side = Math.max(1, Math.round((ph - 2 * r) / 14));
+    for (k = 1; k < side; k++) L.pts.push([pw + (rand() - 0.5) * amp, r + (ph - 2 * r) * k / side]);
+    if (grounded) {
+      /* Sink the base into the sand so it reads as rooted */
+      L.pts.push([pw + 1, ph + 4], [-1, ph + 4]);
+    } else {
+      for (k = 0; k <= 4; k++) {
+        a = (k / 4) * Math.PI / 2;
+        L.pts.push([pw - r + Math.cos(a) * r, ph - r + Math.sin(a) * r]);
+      }
+      for (k = 1; k < steps; k++) L.pts.push([pw - r - (pw - 2 * r) * k / steps, ph + (rand() - 0.3) * amp]);
+      for (k = 0; k <= 4; k++) {
+        a = Math.PI / 2 + (k / 4) * Math.PI / 2;
+        L.pts.push([r + Math.cos(a) * r, ph - r + Math.sin(a) * r]);
+      }
+    }
+    for (k = side - 1; k >= 1; k--) L.pts.push([(rand() - 0.5) * amp, r + (ph - 2 * r) * k / side]);
+    /* Grounded rocks taper a little toward the top like a reef mound */
+    if (grounded) {
+      for (k = 0; k < L.pts.length; k++) {
+        L.pts[k][0] += (pw / 2 - L.pts[k][0]) * 0.12 * Math.max(0, 1 - L.pts[k][1] / ph);
+      }
+    }
+
+    /* Crust patches and polyp dots, clipped to the body when drawn */
+    var area = pw * ph;
+    var np = Math.max(2, Math.min(9, Math.round(area / 900)));
+    for (k = 0; k < np; k++) {
+      L.patches.push({ x: rand() * pw, y: ph * (0.1 + rand() * 0.8), rx: 4 + rand() * Math.min(10, pw * 0.2), ry: 2.5 + rand() * 4, col: L.pal.patch[k % 3], rot: rand() * 3 });
+    }
+    var nd = Math.max(4, Math.min(30, Math.round(area / 220)));
+    for (k = 0; k < nd; k++) {
+      L.dots.push({ x: 3 + rand() * (pw - 6), y: 5 + rand() * (ph - 8), r: 0.8 + rand() * 1.4 });
+    }
+    var nb = Math.max(2, Math.min(12, Math.round((pw + ph) / 30)));
+    for (k = 0; k < nb; k++) {
+      var onSide = rand() < 0.5;
+      L.barnacles.push({
+        x: onSide ? (rand() < 0.5 ? 2 + rand() * 5 : pw - 2 - rand() * 5) : 4 + rand() * (pw - 8),
+        y: onSide ? ph * (0.3 + rand() * 0.6) : 6 + rand() * Math.max(2, ph - 14),
+        r: 1.3 + rand() * 1.3,
+      });
+    }
+
+    /* Growths across the top face: fans, tubes, anemones, brain mounds */
+    var ng = Math.max(2, Math.floor(pw / 26));
+    for (k = 0; k < ng; k++) {
+      var gx = 5 + (k + 0.5) * ((pw - 10) / ng) + (rand() - 0.5) * 6;
+      var kind = rand();
+      L.grow.push({
+        x: gx,
+        type: kind < 0.3 ? 'fan' : kind < 0.55 ? 'tube' : kind < 0.85 ? 'anemone' : 'brain',
+        s: 0.7 + rand() * 0.5,
+        col: L.pal.grow[Math.floor(rand() * 3)],
+        ph: rand() * 6.28,
+      });
+    }
+    return L;
+  }
+
+  /* Smooth closed path through the layout points (midpoint quadratics) */
+  function traceReef(c, px, py, pts) {
+    var n = pts.length;
+    var last = pts[n - 1], first = pts[0];
     c.beginPath();
-    c.ellipse(cx, py + ph - 1, hw * 0.95, 4, 0, 0, Math.PI * 2);
+    c.moveTo(px + (last[0] + first[0]) / 2, py + (last[1] + first[1]) / 2);
+    for (var i = 0; i < n; i++) {
+      var p = pts[i], q = pts[(i + 1) % n];
+      c.quadraticCurveTo(px + p[0], py + p[1], px + (p[0] + q[0]) / 2, py + (p[1] + q[1]) / 2);
+    }
+    c.closePath();
+  }
+
+  /* Coral-encrusted reef rock used as a collision platform. Gradient
+     body with a sunlit upper-left, crust patches, polyp dots, barnacles,
+     a rim highlight along the top and swaying growths on the crown; the
+     lower part falls off into the blue so tall pillars feel deep. */
+  function drawRockPlatform(c, px, py, pw, ph, seed, grounded, t) {
+    var key = seed + ',' + py + ',' + pw + ',' + ph;
+    var L = reefCache[key] || (reefCache[key] = buildReefLayout(pw, ph, seed * 0.37 + ph, grounded));
+    var pal = L.pal;
+    var k;
+    c.save();
+
+    if (grounded) {
+      c.fillStyle = 'rgba(4, 14, 26, 0.4)';
+      c.beginPath();
+      c.ellipse(px + pw / 2, py + ph + 2, pw * 0.6, 5, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+
+    /* Body */
+    var g = c.createLinearGradient(0, py, 0, py + ph);
+    g.addColorStop(0, pal.light);
+    g.addColorStop(0.45, pal.mid);
+    g.addColorStop(1, pal.dark);
+    c.fillStyle = g;
+    traceReef(c, px, py, L.pts);
     c.fill();
+
+    c.save();
+    c.clip();
+    for (k = 0; k < L.patches.length; k++) {
+      var pa = L.patches[k];
+      c.globalAlpha = 0.3;
+      c.fillStyle = pa.col;
+      c.beginPath();
+      c.ellipse(px + pa.x, py + pa.y, pa.rx, pa.ry, pa.rot, 0, Math.PI * 2);
+      c.fill();
+    }
+    /* Polyp bumps (light) alternating with pits (dark) for texture */
+    for (k = 0; k < L.dots.length; k++) {
+      var d = L.dots[k];
+      c.globalAlpha = k % 2 ? 0.3 : 0.5;
+      c.fillStyle = k % 2 ? '#2a0f30' : pal.rim;
+      c.beginPath();
+      c.arc(px + d.x, py + d.y, d.r, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.globalAlpha = 1;
+    /* Sphere-lit sheen from the upper-left */
+    var hr = Math.max(pw, ph) * 0.8;
+    var hg = c.createRadialGradient(px + pw * 0.3, py + Math.min(ph * 0.25, 14), 2, px + pw * 0.3, py + Math.min(ph * 0.25, 14), hr);
+    hg.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+    hg.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    c.fillStyle = hg;
+    c.fillRect(px - 2, py - 6, pw + 4, ph + 12);
+    /* Light falloff toward the base */
+    var fg = c.createLinearGradient(0, py + Math.min(ph * 0.35, 24), 0, py + ph + 4);
+    fg.addColorStop(0, 'rgba(8, 26, 52, 0)');
+    fg.addColorStop(1, 'rgba(8, 26, 52, 0.6)');
+    c.fillStyle = fg;
+    c.fillRect(px - 2, py - 6, pw + 4, ph + 12);
     c.restore();
 
-    /* Main rock body – knobbly ellipse traced with a few bumps so it
-       doesn't look like a perfect oval. Darker at the base. */
-    var bumps = 8;
-    c.fillStyle = '#3a4350';
-    c.beginPath();
-    for (var i = 0; i <= bumps; i++) {
-      var t = i / bumps;
-      var ang = Math.PI + Math.PI * t; /* top half, left to right */
-      var jitter = (rand(i + 1) - 0.5) * Math.min(6, hh * 0.35);
-      var ex = cx + Math.cos(ang) * (hw + jitter * 0.2);
-      var ey = cy + Math.sin(ang) * (hh + jitter);
-      if (i === 0) c.moveTo(ex, ey);
-      else c.lineTo(ex, ey);
-    }
-    /* Bottom edge flat-ish so it reads as rooted to the seafloor */
-    c.lineTo(px + pw, py + ph);
-    c.lineTo(px, py + ph);
-    c.closePath();
-    c.fill();
-
-    /* Mid-tone weathered fill on top so there's directional lighting */
-    var grad = c.createLinearGradient(0, py, 0, py + ph);
-    grad.addColorStop(0, '#6c7784');
-    grad.addColorStop(0.55, '#4a5361');
-    grad.addColorStop(1, '#2d333d');
-    c.fillStyle = grad;
-    c.beginPath();
-    for (var j = 0; j <= bumps; j++) {
-      var t2 = j / bumps;
-      var ang2 = Math.PI + Math.PI * t2;
-      var jt = (rand(j + 21) - 0.5) * Math.min(5, hh * 0.3);
-      var ex2 = cx + Math.cos(ang2) * (hw - 1 + jt * 0.2);
-      var ey2 = cy + Math.sin(ang2) * (hh - 1 + jt);
-      if (j === 0) c.moveTo(ex2, ey2);
-      else c.lineTo(ex2, ey2);
-    }
-    c.lineTo(px + pw - 2, py + ph - 1);
-    c.lineTo(px + 2, py + ph - 1);
-    c.closePath();
-    c.fill();
-
-    /* Soft top-face highlight so the rock has a clear sunlit crown */
-    c.fillStyle = 'rgba(200,215,230,0.22)';
-    c.beginPath();
-    c.ellipse(cx, py + 3, hw * 0.75, Math.min(5, hh * 0.25), 0, 0, Math.PI * 2);
-    c.fill();
-
-    /* Hairline cracks – two diagonal strokes, jitter by seed */
-    c.strokeStyle = 'rgba(10,14,22,0.55)';
-    c.lineWidth = 0.8;
-    c.beginPath();
-    var crackX = px + pw * (0.25 + rand(3) * 0.15);
-    c.moveTo(crackX, py + 4);
-    c.lineTo(crackX + 3, cy);
-    c.lineTo(crackX - 1, py + ph - 5);
+    /* Rim highlight along the top edge, soft outline all round */
+    c.strokeStyle = 'rgba(20, 8, 30, 0.35)';
+    c.lineWidth = 1;
+    traceReef(c, px, py, L.pts);
     c.stroke();
+    c.strokeStyle = pal.rim;
+    c.globalAlpha = 0.75;
+    c.lineWidth = 2;
+    c.lineCap = 'round';
     c.beginPath();
-    var crackX2 = px + pw * (0.6 + rand(7) * 0.15);
-    c.moveTo(crackX2, py + 5);
-    c.lineTo(crackX2 + 4, cy + 2);
+    for (k = 1; k < L.topN - 1; k++) {
+      var p0 = L.pts[k], p1 = L.pts[k + 1];
+      var mx = px + (p0[0] + p1[0]) / 2, my = py + (p0[1] + p1[1]) / 2 + 1;
+      if (k === 1) c.moveTo(mx, my); else c.lineTo(mx, my);
+    }
     c.stroke();
+    c.globalAlpha = 1;
 
-    /* Barnacle clusters – little off-white cones with a dark ring */
-    var barnacleCount = Math.max(3, Math.floor(pw / 18));
-    for (var bi = 0; bi < barnacleCount; bi++) {
-      var bx = px + 4 + rand(bi + 30) * (pw - 8);
-      var by = py + 6 + rand(bi + 40) * (ph - 14);
-      var br = 1.4 + rand(bi + 50) * 1.2;
-      c.fillStyle = '#e4dcc8';
+    /* Barnacles – cream cones with a dark opening */
+    for (k = 0; k < L.barnacles.length; k++) {
+      var b = L.barnacles[k];
+      c.fillStyle = '#f2e8d4';
       c.beginPath();
-      c.arc(bx, by, br, 0, Math.PI * 2);
+      c.arc(px + b.x, py + b.y, b.r, 0, Math.PI * 2);
       c.fill();
-      c.fillStyle = '#6d6456';
+      c.fillStyle = '#5d5048';
       c.beginPath();
-      c.arc(bx, by, br * 0.4, 0, Math.PI * 2);
+      c.arc(px + b.x, py + b.y - b.r * 0.15, b.r * 0.4, 0, Math.PI * 2);
       c.fill();
     }
 
-    /* Crown of algae / tube-anemone tufts on the top face */
-    var tufts = Math.max(2, Math.floor(pw / 22));
-    for (var ti = 0; ti < tufts; ti++) {
-      var tx = px + 6 + (ti + 0.5) * ((pw - 12) / tufts) + (rand(ti + 60) - 0.5) * 4;
-      var kind = rand(ti + 70);
-      if (kind < 0.55) {
-        /* Algae tuft – green fronds */
-        c.strokeStyle = '#2d7a3a';
-        c.lineWidth = 1.4;
-        c.lineCap = 'round';
-        var sway = Math.sin(Date.now() * 0.0012 + seed * 0.01 + ti) * 1.5;
-        for (var fr = -1; fr <= 1; fr++) {
-          c.beginPath();
-          c.moveTo(tx + fr * 1.4, py + 3);
-          c.quadraticCurveTo(tx + fr * 1.4 + sway, py - 2, tx + fr * 2 + sway * 1.3, py - 6);
-          c.stroke();
-        }
-        c.fillStyle = '#3ea054';
-        c.beginPath();
-        c.arc(tx, py + 3, 1.6, 0, Math.PI * 2);
-        c.fill();
-      } else if (kind < 0.85) {
-        /* Anemone – purple stalk with waving tentacles */
-        c.fillStyle = '#6a3b8a';
-        c.beginPath();
-        c.ellipse(tx, py + 2, 2.4, 2, 0, 0, Math.PI * 2);
-        c.fill();
-        c.strokeStyle = '#b07bcf';
-        c.lineWidth = 0.9;
-        c.lineCap = 'round';
-        for (var tc = 0; tc < 5; tc++) {
-          var ta = -Math.PI / 2 + (tc - 2) * 0.35;
-          var wg = Math.sin(Date.now() * 0.002 + seed * 0.05 + tc) * 1;
-          c.beginPath();
-          c.moveTo(tx, py + 1);
-          c.lineTo(tx + Math.cos(ta) * 4 + wg, py + 1 + Math.sin(ta) * 4);
-          c.stroke();
-        }
-      } else {
-        /* Sea urchin – spiny black dome */
-        c.fillStyle = '#1c1620';
-        c.beginPath();
-        c.arc(tx, py + 2, 2.2, 0, Math.PI * 2);
-        c.fill();
-        c.strokeStyle = '#1c1620';
-        c.lineWidth = 0.7;
-        for (var sp2 = 0; sp2 < 8; sp2++) {
-          var sa = -Math.PI + (sp2 / 8) * Math.PI;
-          c.beginPath();
-          c.moveTo(tx, py + 2);
-          c.lineTo(tx + Math.cos(sa) * 4, py + 2 + Math.sin(sa) * 4);
-          c.stroke();
-        }
+    /* Crown growths */
+    for (k = 0; k < L.grow.length; k++) {
+      var gr = L.grow[k];
+      drawReefGrowth(c, px + gr.x, py + 2, gr, Math.sin(t * 0.0013 + gr.ph));
+    }
+    c.restore();
+  }
+
+  /* One growth on a reef crown. `sway` is -1..1. */
+  function drawReefGrowth(c, x, y, gr, sway) {
+    var s = gr.s, col = gr.col, i;
+    c.lineCap = 'round';
+    if (gr.type === 'fan') {
+      /* Gorgonian sea fan: faint webbing behind branching twigs */
+      var sw = sway * 2 * s;
+      c.fillStyle = col;
+      c.globalAlpha = 0.3;
+      c.beginPath();
+      c.moveTo(x, y);
+      c.bezierCurveTo(x - 13 * s + sw, y - 8 * s, x - 9 * s + sw, y - 18 * s, x + sw, y - 18 * s);
+      c.bezierCurveTo(x + 9 * s + sw, y - 18 * s, x + 13 * s + sw, y - 8 * s, x, y);
+      c.fill();
+      c.globalAlpha = 1;
+      c.strokeStyle = col;
+      c.lineWidth = 1.2;
+      c.beginPath();
+      for (i = 0; i < 5; i++) {
+        var ang = -Math.PI / 2 + (i - 2) * 0.38;
+        var len = (14 + (i % 2) * 3) * s;
+        var ex0 = x + sw * 0.5 + Math.cos(ang) * len * 0.55, ey0 = y + Math.sin(ang) * len * 0.55;
+        var ex1 = x + sw + Math.cos(ang) * len, ey1 = y + Math.sin(ang) * len;
+        c.moveTo(x, y);
+        c.quadraticCurveTo(ex0, ey0, ex1, ey1);
+        c.moveTo(ex0, ey0);
+        c.lineTo(ex0 + Math.cos(ang - 0.6) * 5 * s + sw * 0.3, ey0 + Math.sin(ang - 0.6) * 5 * s);
+        c.moveTo(ex0, ey0);
+        c.lineTo(ex0 + Math.cos(ang + 0.6) * 5 * s + sw * 0.3, ey0 + Math.sin(ang + 0.6) * 5 * s);
       }
+      c.stroke();
+    } else if (gr.type === 'tube') {
+      for (i = -1; i <= 1; i++) {
+        var th = (7 + (i === 0 ? 5 : 2 - i)) * s;
+        var tx = x + i * 3.6 * s + sway * (1 + i * 0.3) * 0.8;
+        c.strokeStyle = col;
+        c.lineWidth = 3.2 * s;
+        c.beginPath();
+        c.moveTo(x + i * 3 * s, y + 1);
+        c.lineTo(tx, y - th);
+        c.stroke();
+        c.fillStyle = 'rgba(40, 10, 30, 0.75)';
+        c.beginPath();
+        c.ellipse(tx, y - th, 1.5 * s, 0.9 * s, 0, 0, Math.PI * 2);
+        c.fill();
+        c.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+        c.lineWidth = 0.8;
+        c.beginPath();
+        c.ellipse(tx, y - th, 1.8 * s, 1.1 * s, 0, Math.PI, Math.PI * 2);
+        c.stroke();
+      }
+    } else if (gr.type === 'anemone') {
+      c.strokeStyle = col;
+      c.lineWidth = 1.4 * s;
+      for (i = 0; i < 7; i++) {
+        var aa = -Math.PI / 2 + (i - 3) * 0.32;
+        var len = (7 + (i % 2) * 2) * s;
+        var wv = sway * 2.5 + Math.sin(i * 1.7 + sway) * 0.8;
+        var ex = x + Math.cos(aa) * len + wv, ey = y - 1 + Math.sin(aa) * len;
+        c.beginPath();
+        c.moveTo(x, y - 1);
+        c.quadraticCurveTo(x + Math.cos(aa) * len * 0.5 + wv * 0.3, y - 1 + Math.sin(aa) * len * 0.6, ex, ey);
+        c.stroke();
+        c.fillStyle = '#fff4fa';
+        c.beginPath();
+        c.arc(ex, ey, 1.1 * s, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.fillStyle = col;
+      c.beginPath();
+      c.ellipse(x, y, 3.2 * s, 2.4 * s, 0, 0, Math.PI * 2);
+      c.fill();
+    } else {
+      var bg = c.createRadialGradient(x - 2 * s, y - 4 * s, 0.5, x, y - 2 * s, 7 * s);
+      bg.addColorStop(0, '#ffffff');
+      bg.addColorStop(0.25, col);
+      bg.addColorStop(1, 'rgba(60, 20, 50, 0.9)');
+      c.fillStyle = bg;
+      c.beginPath();
+      c.ellipse(x, y - 1.5 * s, 7 * s, 5 * s, 0, Math.PI, Math.PI * 2);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = 'rgba(60, 20, 50, 0.4)';
+      c.lineWidth = 0.7;
+      c.beginPath();
+      c.moveTo(x - 5 * s, y - 2 * s);
+      c.bezierCurveTo(x - 2 * s, y - 5 * s, x + 1 * s, y - 1 * s, x + 5 * s, y - 3 * s);
+      c.stroke();
     }
   }
 
@@ -1581,6 +1803,7 @@
   window.Game.engine = {
     init: init,
     State: State,
+    drawCoral: drawCoral,
   };
 
   /* Auto-init when DOM is ready */
