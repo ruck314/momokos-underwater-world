@@ -18,44 +18,118 @@
     });
   }
 
+  /* Title seaweed tip heights, seeded once so the fronds sway instead of
+     jittering every frame. */
+  var titleSeaweedTips = [];
+  for (var sw0 = 0; sw0 < 12; sw0++) titleSeaweedTips.push(Math.random() * 10);
+
   /* ---- Helpers ---- */
-  function drawButton(c, text, x, y, w, h, hover) {
-    c.fillStyle = hover ? '#3388cc' : '#225588';
-    c.fillRect(x, y, w, h);
-    c.strokeStyle = '#66bbee';
+  var FONT = '"M PLUS Rounded 1c", sans-serif';
+
+  /* True when the mouse is over the rect, in whatever coordinate space
+     the caller is currently drawing in (the pointer is stored in
+     backing-store pixels and mapped back through the live transform). */
+  var anyHot = false;
+  function pointerOver(c, x, y, w, h) {
+    var p = Game.input && Game.input.pointer;
+    if (!p || p.px < 0 || !c.getTransform) return false;
+    var pt = c.getTransform().inverse().transformPoint(new DOMPoint(p.px, p.py));
+    var over = pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h;
+    if (over) anyHot = true;
+    return over;
+  }
+
+  /* Shrink the current font until text fits maxW. Keeps the weight/family
+     of the font string already set on the context. */
+  function fitFont(c, text, maxW, size, weight) {
+    while (size > 8) {
+      c.font = (weight ? weight + ' ' : '') + size + 'px ' + FONT;
+      if (c.measureText(text).width <= maxW) break;
+      size--;
+    }
+  }
+
+  /* Rounded, glossy button with hover and press feedback. `style` picks a
+     palette: undefined = standard sea-blue, 'primary' = coral call-to-
+     action, 'soft' = muted rose for the red-tinted Game Over screen. */
+  var BUTTON_PALETTES = {
+    standard: { top: '#1f86a8', bot: '#0c4a6e', hTop: '#33a8cc', hBot: '#14648e', edge: '#7ce8ff' },
+    primary:  { top: '#ff8e9c', bot: '#e04f6c', hTop: '#ffacb6', hBot: '#f06884', edge: '#ffe2e8' },
+    soft:     { top: '#b8667a', bot: '#7a3346', hTop: '#cc7c90', hBot: '#924058', edge: '#ffc4cf' },
+  };
+  function drawButton(c, text, x, y, w, h, hover, style) {
+    hover = hover || pointerOver(c, x, y, w, h);
+    var pressed = hover && Game.input.pointer.down;
+    var r = Math.min(12, h / 2);
+    var pal = BUTTON_PALETTES[style] || BUTTON_PALETTES.standard;
+    var oy = pressed ? 2 : 0;
+    c.save();
+    if (!pressed) {
+      c.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      roundRect(c, x, y + 3, w, h, r);
+      c.fill();
+    }
+    var g = c.createLinearGradient(0, y + oy, 0, y + oy + h);
+    g.addColorStop(0, hover ? pal.hTop : pal.top);
+    g.addColorStop(1, hover ? pal.hBot : pal.bot);
+    c.fillStyle = g;
+    roundRect(c, x, y + oy, w, h, r);
+    c.fill();
+    /* Soft top gloss */
+    c.fillStyle = 'rgba(255, 255, 255, 0.12)';
+    roundRect(c, x + 3, y + oy + 2, w - 6, h * 0.42, Math.max(2, r - 3));
+    c.fill();
+    c.strokeStyle = hover ? '#ffffff' : pal.edge;
     c.lineWidth = 2;
-    c.strokeRect(x, y, w, h);
+    roundRect(c, x, y + oy, w, h, r);
+    c.stroke();
     c.fillStyle = '#ffffff';
-    c.font = 'bold 18px monospace';
+    fitFont(c, text, w - 16, Math.min(18, Math.round(h * 0.42)), 'bold');
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillText(text, x + w / 2, y + h / 2);
+    c.shadowColor = 'rgba(0, 0, 0, 0.45)';
+    c.shadowOffsetY = 1;
+    c.fillText(text, x + w / 2, y + oy + h / 2 + 1);
+    c.restore();
   }
 
   function hitButton(mx, my, x, y, w, h) {
     return mx >= x && mx <= x + w && my >= y && my <= y + h;
   }
 
-  function wrapText(c, text, x, y, maxWidth, lineHeight) {
-    var lines = text.split('\n');
-    var dy = 0;
-    for (var li = 0; li < lines.length; li++) {
-      var words = lines[li].split(' ');
+  /* Split text into lines that fit maxWidth. Breaks on spaces, and falls
+     back to per-character breaks for runs with no spaces (Japanese). */
+  function layoutLines(c, text, maxWidth) {
+    var out = [];
+    var paras = text.split('\n');
+    for (var li = 0; li < paras.length; li++) {
+      var words = paras[li].split(' ');
       var line = '';
       for (var i = 0; i < words.length; i++) {
-        var test = line + words[i] + ' ';
-        if (c.measureText(test).width > maxWidth && line.length > 0) {
-          c.fillText(line.trim(), x, y + dy);
-          line = words[i] + ' ';
-          dy += lineHeight;
-        } else {
-          line = test;
+        var word = words[i];
+        var test = line ? line + ' ' + word : word;
+        if (c.measureText(test).width <= maxWidth) { line = test; continue; }
+        if (line) { out.push(line); line = ''; }
+        /* Word alone is too wide: break it character by character. */
+        while (c.measureText(word).width > maxWidth && word.length > 1) {
+          var n = word.length - 1;
+          while (n > 1 && c.measureText(word.slice(0, n)).width > maxWidth) n--;
+          /* Don't start a line with closing punctuation. */
+          while (n > 1 && '、。！？」）ー'.indexOf(word.charAt(n)) >= 0) n--;
+          out.push(word.slice(0, n));
+          word = word.slice(n);
         }
+        line = word;
       }
-      c.fillText(line.trim(), x, y + dy);
-      dy += lineHeight;
+      out.push(line);
     }
-    return dy;
+    return out;
+  }
+
+  function wrapText(c, text, x, y, maxWidth, lineHeight) {
+    var lines = layoutLines(c, text, maxWidth);
+    for (var i = 0; i < lines.length; i++) c.fillText(lines[i], x, y + i * lineHeight);
+    return lines.length * lineHeight;
   }
 
   /* ---- Title Screen ---- */
@@ -108,7 +182,7 @@
       c.fillStyle = '#1a5533';
       c.beginPath();
       c.moveTo(swx, H);
-      c.quadraticCurveTo(swx + sway, H - 40, swx + 5, H - 60 - Math.random() * 10);
+      c.quadraticCurveTo(swx + sway, H - 40, swx + 5, H - 60 - titleSeaweedTips[sw]);
       c.quadraticCurveTo(swx - sway + 10, H - 40, swx + 10, H);
       c.closePath();
       c.fill();
@@ -117,7 +191,7 @@
     /* Title text with wave effect */
     var title = Game.i18n.t('title');
     c.save();
-    c.font = 'bold 36px monospace';
+    c.font = 'bold 36px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     /* Shadow */
@@ -134,12 +208,12 @@
 
     /* Subtitle */
     c.fillStyle = '#88aacc';
-    c.font = '14px monospace';
+    c.font = '14px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.fillText(Game.i18n.t('titleSubtitle'), W / 2, 140);
 
     /* Buttons */
-    drawButton(c, Game.i18n.t('play'), W / 2 - 90, 200, 180, 44);
+    drawButton(c, Game.i18n.t('play'), W / 2 - 90, 200, 180, 44, false, 'primary');
     drawButton(c, Game.i18n.t('howToPlay'), W / 2 - 90, 260, 180, 44);
     drawButton(c, Game.i18n.t('language') + ': ' + Game.i18n.t('langLabel'), W / 2 - 90, 320, 180, 44);
 
@@ -151,7 +225,7 @@
     if (Game.VERSION) {
       c.save();
       c.fillStyle = '#4a6a8a';
-      c.font = '11px monospace';
+      c.font = '11px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'right';
       c.textBaseline = 'alphabetic';
       var stamp = Game.VERSION + (Game.BUILD ? ' (' + Game.BUILD + ')' : '');
@@ -167,14 +241,22 @@
 
   function drawInstructionsOverlay(c) {
     c.save();
-    c.fillStyle = 'rgba(0,0,0,0.85)';
+    /* The title buttons underneath aren't clickable while this is up. */
+    anyHot = false;
+    c.fillStyle = 'rgba(2, 10, 24, 0.7)';
     c.fillRect(0, 0, W, H);
+    c.fillStyle = 'rgba(8, 36, 64, 0.97)';
+    roundRect(c, 110, 40, W - 220, 380, 16);
+    c.fill();
+    c.strokeStyle = '#7ce8ff';
+    c.lineWidth = 2;
+    c.stroke();
     c.fillStyle = '#66ccff';
-    c.font = 'bold 24px monospace';
+    c.font = 'bold 24px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.fillText(Game.i18n.t('howToPlay'), W / 2, 80);
     c.fillStyle = '#ccddee';
-    c.font = '16px monospace';
+    c.font = '16px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     wrapText(c, Game.i18n.t('instructions'), W / 2, 130, 600, 28);
     drawButton(c, 'OK', W / 2 - 60, 350, 120, 40);
@@ -220,7 +302,7 @@
     if (Game.VERSION) {
       c.save();
       c.fillStyle = '#4a6a8a';
-      c.font = '11px monospace';
+      c.font = '11px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'right';
       c.textBaseline = 'alphabetic';
       var stamp = Game.VERSION + (Game.BUILD ? ' (' + Game.BUILD + ')' : '');
@@ -247,9 +329,10 @@
     c.fillStyle = 'rgba(0,0,0,0.7)';
     c.fillRect(0, 0, W, H);
     c.fillStyle = '#66ccff';
-    c.font = 'bold 32px monospace';
+    c.font = 'bold 32px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
-    c.fillText(Game.i18n.t('paused'), W / 2, 90);
+    /* Centred over the button column and below the waterline scallops. */
+    c.fillText(Game.i18n.t('paused'), W / 2 + 100, 130);
 
     /* Floss-dance Momoko – phase advances at ~1.7Hz and the pose math
        smooths the beat with a tanh sigmoid so she transitions between
@@ -274,7 +357,7 @@
        glance which build is paused (handy for bug reports). */
     if (Game.VERSION) {
       c.fillStyle = '#6688aa';
-      c.font = '11px monospace';
+      c.font = '11px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'right';
       c.textBaseline = 'alphabetic';
       var pStamp = Game.VERSION + (Game.BUILD ? ' (' + Game.BUILD + ')' : '');
@@ -363,7 +446,7 @@
     }
     /* "SCAN" caption below */
     c.fillStyle = '#cfe6ff';
-    c.font = 'bold 10px monospace';
+    c.font = 'bold 10px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'alphabetic';
     c.fillText('SCAN TO PLAY', cx, y0 + rendered + 14);
@@ -402,22 +485,45 @@
     var boxX = (cw - boxW) / 2;
 
     c.save();
-    c.fillStyle = 'rgba(0, 15, 40, 0.92)';
-    c.fillRect(boxX, boxY, boxW, boxH);
-    c.strokeStyle = '#44aadd';
-    c.lineWidth = 2;
-    c.strokeRect(boxX, boxY, boxW, boxH);
+    /* Size the box to the text so a third line never spills out. The
+       bottom edge stays where the layout above put it. */
+    c.font = '14px ' + FONT;
+    var lines = layoutLines(c, text, boxW - 32);
+    var need = 34 + lines.length * 19 + 10;
+    if (need > boxH) { boxY -= need - boxH; boxH = need; }
 
-    /* Speaker name */
-    c.fillStyle = '#ffcc44';
-    c.font = 'bold 14px monospace';
+    c.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    roundRect(c, boxX, boxY + 3, boxW, boxH, 12);
+    c.fill();
+    var g = c.createLinearGradient(0, boxY, 0, boxY + boxH);
+    g.addColorStop(0, 'rgba(12, 58, 92, 0.96)');
+    g.addColorStop(1, 'rgba(4, 26, 50, 0.96)');
+    c.fillStyle = g;
+    roundRect(c, boxX, boxY, boxW, boxH, 12);
+    c.fill();
+    c.strokeStyle = '#7ce8ff';
+    c.lineWidth = 2;
+    roundRect(c, boxX, boxY, boxW, boxH, 12);
+    c.stroke();
+
+    /* Speaker name tag */
+    c.font = 'bold 14px ' + FONT;
+    var tagW = c.measureText(speaker).width + 20;
+    c.fillStyle = '#ff7f96';
+    roundRect(c, boxX + 14, boxY - 10, tagW, 22, 11);
+    c.fill();
+    c.fillStyle = '#ffffff';
     c.textAlign = 'left';
-    c.fillText(speaker, boxX + 12, boxY + 18);
+    c.textBaseline = 'middle';
+    c.fillText(speaker, boxX + 24, boxY + 1);
 
     /* Text */
-    c.fillStyle = '#ddeeff';
-    c.font = '13px monospace';
-    wrapText(c, text, boxX + 12, boxY + 36, boxW - 24, 17);
+    c.fillStyle = '#e8f6ff';
+    c.font = '14px ' + FONT;
+    c.textBaseline = 'alphabetic';
+    for (var i = 0; i < lines.length; i++) {
+      c.fillText(lines[i], boxX + 16, boxY + 34 + i * 19);
+    }
 
     c.restore();
   }
@@ -429,11 +535,11 @@
     c.fillRect(0, 0, W, H);
 
     c.fillStyle = '#ff3344';
-    c.font = 'bold 40px monospace';
+    c.font = 'bold 40px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.fillText(Game.i18n.t('gameOver'), W / 2, 160);
 
-    drawButton(c, Game.i18n.t('tryAgain'), W / 2 - 90, 240, 180, 48);
+    drawButton(c, Game.i18n.t('tryAgain'), W / 2 - 90, 240, 180, 48, false, 'soft');
     c.restore();
   }
 
@@ -487,7 +593,7 @@
     c.globalAlpha = 1;
 
     c.fillStyle = '#ffcc33';
-    c.font = 'bold 44px monospace';
+    c.font = 'bold 44px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.shadowColor = '#ffaa00';
     c.shadowBlur = 20;
@@ -495,14 +601,14 @@
     c.shadowBlur = 0;
 
     c.fillStyle = '#88ddff';
-    c.font = '20px monospace';
+    c.font = '20px "M PLUS Rounded 1c", sans-serif';
     c.fillText(Game.i18n.t('savedOcean'), W / 2, 180);
 
     c.fillStyle = '#ccddee';
-    c.font = '16px monospace';
+    c.font = '16px "M PLUS Rounded 1c", sans-serif';
     c.fillText(Game.i18n.t('thanks'), W / 2, 220);
 
-    drawButton(c, Game.i18n.t('playAgain'), W / 2 - 90, 280, 180, 48);
+    drawButton(c, Game.i18n.t('playAgain'), W / 2 - 90, 280, 180, 48, false, 'primary');
     c.restore();
   }
 
@@ -602,7 +708,7 @@
      gap. Used by both the draw pass and the hit-test. */
   function colorYFor(tab) {
     var rows = Math.max(1, Math.ceil(tab.variants.length / GRID_COLS));
-    return GRID_Y + rows * (GRID_TILE_H + GRID_GAP) + 12;
+    return GRID_Y + rows * (GRID_TILE_H + GRID_GAP) + 26;
   }
 
   /* Tile icon for a variant. Keeps per-tile drawing small and iconic so
@@ -1000,7 +1106,7 @@
 
     /* Title */
     c.fillStyle = '#66ccff';
-    c.font = 'bold 26px monospace';
+    c.font = 'bold 26px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.fillText(Game.i18n.t('customize'), W / 2, 36);
 
@@ -1024,7 +1130,8 @@
       var tx = TAB_X + ti * (TAB_W + TAB_GAP);
       var tab = customTabs[ti];
       var active = customSelection.tab === tab.id;
-      c.fillStyle = active ? '#3388cc' : '#1a3a5a';
+      var tabHot = pointerOver(c, tx, TAB_Y, TAB_W, TAB_H);
+      c.fillStyle = active ? '#3388cc' : tabHot ? '#265580' : '#1a3a5a';
       roundRect(c, tx, TAB_Y, TAB_W, TAB_H, 6);
       c.fill();
       if (active) {
@@ -1034,7 +1141,7 @@
         c.stroke();
       }
       c.fillStyle = active ? '#ffffff' : '#aaccee';
-      c.font = 'bold 11px monospace';
+      fitFont(c, Game.i18n.t(tab.label), TAB_W - 8, 12, 'bold');
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(Game.i18n.t(tab.label), tx + TAB_W / 2, TAB_Y + TAB_H / 2);
@@ -1052,7 +1159,8 @@
       var v = activeTab.variants[vi];
       var selected = v.id === currentVariantId;
       /* Tile bg */
-      c.fillStyle = selected ? '#2b5580' : '#12253d';
+      var tileHot = pointerOver(c, gx, gy, GRID_TILE_W, GRID_TILE_H);
+      c.fillStyle = selected ? '#2b5580' : tileHot ? '#1c3a5c' : '#12253d';
       roundRect(c, gx, gy, GRID_TILE_W, GRID_TILE_H, 8);
       c.fill();
       if (selected) {
@@ -1065,7 +1173,7 @@
       drawVariantIcon(c, activeTab.id, v.id, gx + 32, gy + GRID_TILE_H / 2 - 2, Game.customization);
       /* Label (right side) */
       c.fillStyle = '#eef6ff';
-      c.font = 'bold 12px monospace';
+      fitFont(c, Game.i18n.t(v.label), GRID_TILE_W - 72, 12, 'bold');
       c.textAlign = 'left';
       c.textBaseline = 'middle';
       c.fillText(Game.i18n.t(v.label), gx + 64, gy + GRID_TILE_H / 2);
@@ -1081,7 +1189,7 @@
                    : activeTab.colorField === 'suit' ? 'suitColor'
                    : 'skinTone';
       c.fillStyle = '#88aacc';
-      c.font = '13px monospace';
+      c.font = '13px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'left';
       c.fillText(Game.i18n.t(labelKey), COLOR_X, colorY - 8);
       var selColor = Game.customization[activeTab.colorField];
@@ -1108,7 +1216,7 @@
     /* Skin tones – always visible regardless of tab (it's the only axis
        that doesn't belong to a category but still matters) */
     c.fillStyle = '#88aacc';
-    c.font = '13px monospace';
+    c.font = '13px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     c.fillText(Game.i18n.t('skinTone'), COLOR_X, colorY + 48);
     for (var ki = 0; ki < skinTones.length; ki++) {
@@ -1131,7 +1239,7 @@
     }
 
     /* Start button */
-    drawButton(c, Game.i18n.t('startGame'), START_BTN_X, START_BTN_Y, START_BTN_W, START_BTN_H);
+    drawButton(c, Game.i18n.t('startGame'), START_BTN_X, START_BTN_Y, START_BTN_W, START_BTN_H, false, 'primary');
   }
 
   function drawMomokoPreview(c, cust) {
@@ -1259,7 +1367,7 @@
 
     /* Title */
     c.fillStyle = '#ffcc66';
-    c.font = 'bold 28px monospace';
+    c.font = 'bold 28px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.shadowColor = '#884400';
     c.shadowBlur = 6;
@@ -1278,7 +1386,7 @@
 
     /* Story text */
     c.fillStyle = '#dfeeff';
-    c.font = '14px monospace';
+    c.font = '14px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'left';
     wrapText(c, Game.i18n.t('introText'), panelX + 18, panelY + 28, panelW - 36, 20);
 
@@ -2060,7 +2168,7 @@
     /* Title text with shadow – pulled from a small pool so it varies */
     c.save();
     c.fillStyle = '#ffffff';
-    c.font = 'bold 30px monospace';
+    c.font = 'bold 30px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.shadowColor = 'rgba(0,0,0,0.6)';
     c.shadowBlur = 6;
@@ -2070,11 +2178,15 @@
 
     /* Text panel */
     var panelW = 520, panelH = 60, panelX = (W - panelW) / 2, panelY = 58;
-    c.fillStyle = 'rgba(0, 40, 70, 0.55)';
+    /* Near-opaque so the text stays readable over the bright sky. */
+    c.fillStyle = 'rgba(6, 40, 72, 0.88)';
     roundRect(c, panelX, panelY, panelW, panelH, 10);
     c.fill();
+    c.strokeStyle = '#7ce8ff';
+    c.lineWidth = 2;
+    c.stroke();
     c.fillStyle = '#e8f4ff';
-    c.font = '14px monospace';
+    c.font = '14px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     wrapText(c, Game.i18n.t(sc.textKey), W / 2, panelY + 22, panelW - 20, 20);
 
@@ -2133,8 +2245,19 @@
     return null;
   }
 
+  /* Canvas text doesn't trigger web-font downloads reliably (Safari), so
+     ask for every weight we draw with, covering all game text. */
+  if (document.fonts && document.fonts.load) {
+    var sample = Game.i18n.allText();
+    ['400', '700'].forEach(function (wgt) {
+      document.fonts.load(wgt + ' 16px "M PLUS Rounded 1c"', sample).catch(function () {});
+    });
+  }
+
   /* ---- Exports ---- */
   window.Game.ui = {
+    beginFrame: function () { anyHot = false; },
+    isHot: function () { return anyHot; },
     drawTitleScreen: function (c) {
       drawTitleScreen(c);
       if (showInstructions) drawInstructionsOverlay(c);

@@ -314,9 +314,22 @@
     },
 
     t: function (key) {
-      return (strings[currentLang] && strings[currentLang][key]) ||
-             (strings.en && strings.en[key]) ||
-             key;
+      /* Check for undefined, not falsy: an intentionally empty string
+         (e.g. a JA prefix with no equivalent) must not fall back to EN. */
+      var cur = strings[currentLang];
+      if (cur && cur[key] !== undefined) return cur[key];
+      if (strings.en && strings.en[key] !== undefined) return strings.en[key];
+      return key;
+    },
+
+    /* Every string in every language, so the UI font's Japanese subsets
+       can be fetched up front instead of popping in mid-game. */
+    allText: function () {
+      var out = '';
+      for (var lang in strings) {
+        for (var k in strings[lang]) out += strings[lang][k];
+      }
+      return out;
     },
 
     getJoke: function () {

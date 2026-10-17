@@ -28,6 +28,9 @@
   };
   var BUTTON_NAMES = ['up', 'down', 'left', 'right', 'action', 'pause'];
   var isTouchDevice = false;
+  /* Mouse pointer in game-space, for button hover/press feedback. Only
+     real mice update it -- touch taps would leave a stale "hover". */
+  var pointer = { x: -1, y: -1, px: -1, py: -1, down: false };
   var canvas = null;
   var canvasRect = null;
   var GAME_W = 800;   /* logical game viewport width */
@@ -244,6 +247,13 @@
     canvas.addEventListener('touchmove', onTouchMove, { passive: false });
     canvas.addEventListener('touchend', onTouchEnd, { passive: false });
     canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+    canvas.addEventListener('pointermove', onPointer);
+    canvas.addEventListener('pointerdown', onPointer);
+    window.addEventListener('pointerup', onPointer);
+    canvas.addEventListener('pointerleave', function () {
+      pointer.x = pointer.y = pointer.px = pointer.py = -1;
+      pointer.down = false;
+    });
 
     isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
   }
@@ -356,7 +366,7 @@
       c.lineWidth = 2;
       c.stroke();
       c.fillStyle = '#ffffff';
-      c.font = 'bold 34px monospace';
+      c.font = 'bold 34px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(arrows[i], b.x, b.y);
@@ -380,7 +390,7 @@
     c.lineWidth = 2;
     c.stroke();
     c.fillStyle = '#ffffff';
-    c.font = 'bold 24px monospace';
+    c.font = 'bold 24px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     var bubbleLabel = (window.Game && Game.i18n) ? Game.i18n.t('bubbleBtn') : 'BUBBLE';
@@ -396,7 +406,7 @@
     c.lineWidth = 2;
     c.stroke();
     c.fillStyle = '#ffffff';
-    c.font = 'bold 20px monospace';
+    c.font = 'bold 20px "M PLUS Rounded 1c", sans-serif';
     c.fillText('II', pb.x, pb.y);
 
     c.restore();
@@ -420,6 +430,20 @@
     return { x: canvasX - gameOffsetX(), y: canvasY - gameOffsetY() };
   }
 
+  function onPointer(e) {
+    if (e.pointerType !== 'mouse') return;
+    if (e.type === 'pointerup') { pointer.down = false; return; }
+    var p = getClickPos(e);
+    var rect = canvas.getBoundingClientRect();
+    pointer.x = p.x;
+    pointer.y = p.y;
+    /* Backing-store pixels, so painters can map it through whatever
+       transform is current when they draw (see ui.js pointerOver). */
+    pointer.px = (e.clientX - rect.left) * canvas.width / rect.width;
+    pointer.py = (e.clientY - rect.top) * canvas.height / rect.height;
+    if (e.type === 'pointerdown') pointer.down = true;
+  }
+
   window.Game.input = {
     init: init,
     update: function () {
@@ -435,6 +459,7 @@
     /* Legacy alias – calls the new strip + buttons painter. */
     drawTouchControls: function (c) { drawTouchStrip(c, true); },
     getClickPos: getClickPos,
+    pointer: pointer,
     isTouch: function () { return isTouchDevice; },
   };
 })();

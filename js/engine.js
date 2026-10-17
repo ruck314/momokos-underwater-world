@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.5.1';
+  Game.VERSION = 'v1.6.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -577,6 +577,12 @@
        0..H coordinates regardless of the side / top / bottom padding. */
     ctx.save();
     if (GAME_X || GAME_Y) ctx.translate(GAME_X, GAME_Y);
+    /* Keep the world inside the viewport so it can't bleed into the
+       touch bezels. */
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.clip();
+    if (Game.ui.beginFrame) Game.ui.beginFrame();
 
     switch (state) {
       case State.TITLE:
@@ -639,6 +645,8 @@
 
     ctx.restore();
 
+    updateChrome();
+
     /* Canvas-space overlays sit outside the game viewport so they can
        use the bezel area. */
     if (Game.input.isTouch() && (state === State.PLAYING || state === State.PAUSED)) {
@@ -665,6 +673,21 @@
         CANVAS_W, CANVAS_H, GAME_X, GAME_Y
       );
     }
+  }
+
+  /* DOM bits that track the game state: the Game Center link only shows
+     where it can't cover play, and the cursor turns into a pointer over
+     anything clickable. */
+  var linkEl = null, lastLinkShown = null, lastCursor = null;
+  function updateChrome() {
+    if (!linkEl) linkEl = document.getElementById('game-center-link');
+    var show = state === State.TITLE || state === State.PAUSED;
+    if (linkEl && show !== lastLinkShown) {
+      linkEl.classList.toggle('hidden', !show);
+      lastLinkShown = show;
+    }
+    var cursor = Game.ui.isHot && Game.ui.isHot() ? 'pointer' : 'default';
+    if (cursor !== lastCursor) { canvas.style.cursor = cursor; lastCursor = cursor; }
   }
 
   function renderGame() {
@@ -875,7 +898,7 @@
           var ix = npc.x - camera.x + npc.w / 2;
           var iy = npc.y - camera.y - 14;
           ctx.fillStyle = '#ffcc33';
-          ctx.font = 'bold 14px monospace';
+          ctx.font = 'bold 14px "M PLUS Rounded 1c", sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText('!', ix, iy + Math.sin(Date.now() * 0.005) * 3);
         }

@@ -1850,23 +1850,53 @@
 
   Moni.prototype.drawHealthBar = function (c) {
     if (!this.active || this.defeated) return;
-    var barW = 200;
-    var barH = 12;
+    var barW = 220;
+    var barH = 18;
     var bx = (W - barW) / 2;
-    var by = 14;
-    /* Background */
-    c.fillStyle = '#330033';
-    c.fillRect(bx - 2, by - 2, barW + 4, barH + 4);
-    /* Bar */
-    c.fillStyle = '#882288';
+    var by = 12;
+    var r = barH / 2;
+    function pill(x, y, w, h, rr) {
+      c.beginPath();
+      c.moveTo(x + rr, y);
+      c.arcTo(x + w, y, x + w, y + h, rr);
+      c.arcTo(x + w, y + h, x, y + h, rr);
+      c.arcTo(x, y + h, x, y, rr);
+      c.arcTo(x, y, x + w, y, rr);
+      c.closePath();
+    }
+    c.save();
+    /* Frame */
+    c.fillStyle = '#2a0830';
+    pill(bx - 3, by - 3, barW + 6, barH + 6, r + 3);
+    c.fill();
+    c.strokeStyle = '#f0b0ff';
+    c.lineWidth = 2;
+    c.stroke();
+    /* Track + fill, clipped to the rounded inside */
+    pill(bx, by, barW, barH, r);
+    c.clip();
+    c.fillStyle = '#5a1a60';
     c.fillRect(bx, by, barW, barH);
-    c.fillStyle = '#cc44cc';
-    c.fillRect(bx, by, barW * (this.hp / this.maxHp), barH);
-    /* Label */
-    c.fillStyle = '#ffffff';
-    c.font = 'bold 10px monospace';
+    var g = c.createLinearGradient(0, by, 0, by + barH);
+    g.addColorStop(0, '#f27af2');
+    g.addColorStop(1, '#a832b8');
+    c.fillStyle = g;
+    c.fillRect(bx, by, barW * Math.max(0, this.hp / this.maxHp), barH);
+    c.fillStyle = 'rgba(255, 255, 255, 0.18)';
+    c.fillRect(bx, by, barW, barH * 0.4);
+    c.restore();
+    /* Label, outlined so it reads over both the fill and the track */
+    c.save();
+    c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
-    c.fillText(Game.i18n.t('bossHP'), W / 2, by + 10);
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    c.lineWidth = 3;
+    c.strokeStyle = '#2a0830';
+    c.strokeText(Game.i18n.t('bossHP'), W / 2, by + barH / 2 + 1);
+    c.fillStyle = '#ffffff';
+    c.fillText(Game.i18n.t('bossHP'), W / 2, by + barH / 2 + 1);
+    c.restore();
   };
 
   /* ========== OLIVER (NPC - Otter) ========== */
