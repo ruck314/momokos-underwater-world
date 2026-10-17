@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.9.0';
+  Game.VERSION = 'v1.10.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -569,6 +569,19 @@
   }
 
   /* ---- Render ---- */
+  /* Runs fn with drawing clipped to the game viewport. The overlay
+     states (pause, game over) widen the view to the whole canvas on
+     tablets so their scrim covers the bezel too; the frozen scene under
+     the menu still has to stay inside the 800x480 window. */
+  function drawClipped(fn) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.clip();
+    fn();
+    ctx.restore();
+  }
+
   function render() {
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
@@ -582,6 +595,10 @@
     var fullBleed = Game.input.isTouch() && (
       state === State.TITLE || state === State.CUSTOMIZE ||
       state === State.INTRO || state === State.VICTORY);
+    /* Pause and game-over dim the whole screen, bezel included, so the
+       menu floats over the frozen game instead of a bright island. */
+    var dimAll = Game.input.isTouch() && (
+      state === State.PAUSED || state === State.GAME_OVER);
     if (Game.input.isTouch() && !fullBleed) {
       Game.input.drawTouchStrip(ctx, false);
     }
@@ -590,7 +607,7 @@
        0..H coordinates regardless of the side / top / bottom padding. */
     ctx.save();
     if (GAME_X || GAME_Y) ctx.translate(GAME_X, GAME_Y);
-    if (fullBleed) {
+    if (fullBleed || dimAll) {
       Game.ui.setView(-GAME_X, -GAME_Y, CANVAS_W, CANVAS_H);
     } else {
       Game.ui.setView(0, 0, W, H);
@@ -642,13 +659,12 @@
         break;
 
       case State.PAUSED:
-        renderGame();
-        Game.ui.drawHUD(ctx, player);
+        drawClipped(function () { renderGame(); Game.ui.drawHUD(ctx, player); });
         Game.ui.drawPauseMenu(ctx);
         break;
 
       case State.GAME_OVER:
-        renderGame();
+        drawClipped(renderGame);
         Game.ui.drawGameOver(ctx);
         break;
 

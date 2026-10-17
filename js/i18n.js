@@ -159,7 +159,7 @@
       howToPlay: 'あそびかた',
       instructions: 'およぐ: やじるしキー / 十字ボタン\nあわをうつ: スペース / あわボタン\nひとやすみ: Esc / P / ポーズボタン\nてきをたおして うみをすくおう!',
       language: 'ことば',
-      langLabel: 'JP',
+      langLabel: 'JA',
       rotateHint: 'デバイスを よこむきにしてください！',
       bubbleBtn: 'あわ',
       soundOn: 'おと: オン',

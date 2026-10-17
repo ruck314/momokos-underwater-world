@@ -434,7 +434,7 @@
     /* The title buttons underneath aren't clickable while this is up. */
     anyHot = false;
     c.fillStyle = 'rgba(2, 10, 24, 0.7)';
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
     c.fillStyle = 'rgba(8, 36, 64, 0.97)';
     roundRect(c, 110, 40, W - 220, 380, 16);
     c.fill();
@@ -591,7 +591,7 @@
     pauseFlossTimer++;
     c.save();
     c.fillStyle = 'rgba(0,0,0,0.7)';
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
     c.fillStyle = '#66ccff';
     c.font = 'bold 32px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
@@ -809,12 +809,12 @@
     var t = gameOverTimer;
     c.save();
     c.fillStyle = 'rgba(12, 30, 64, 0.8)';
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
     var vg = c.createRadialGradient(W / 2, 220, 40, W / 2, 220, 420);
     vg.addColorStop(0, 'rgba(120, 180, 255, 0.16)');
     vg.addColorStop(1, 'rgba(4, 10, 30, 0.45)');
     c.fillStyle = vg;
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
 
     /* Slow bubbles rising past her */
     for (var b = 0; b < 8; b++) {
@@ -1779,14 +1779,23 @@
     drawSeaBackdrop(c, introAnimTimer);
     clipGame(c);
 
+    /* Size the story card to its text and centre it between the heading
+       and the Continue button instead of leaving a half-empty box. */
+    var panelX = 240, panelW = 540;
+    c.font = '14px "M PLUS Rounded 1c", sans-serif';
+    var introLines = layoutLines(c, Game.i18n.t('introText'), panelW - 36);
+    var panelH = introLines.length * 20 + 40;
+    var panelY = Math.round(72 + (H - 72 - 72 - panelH) / 2);
+    var portraitY = panelY + panelH / 2 - 32;
+
     /* Momoko portrait (left) on a soft glow */
-    var pg = c.createRadialGradient(120, 250, 10, 120, 250, 110);
+    var pg = c.createRadialGradient(120, portraitY + 50, 10, 120, portraitY + 50, 110);
     pg.addColorStop(0, 'rgba(255, 170, 210, 0.3)');
     pg.addColorStop(1, 'rgba(255, 170, 210, 0)');
     c.fillStyle = pg;
-    c.fillRect(10, 140, 220, 220);
+    c.fillRect(10, portraitY - 60, 220, 220);
     c.save();
-    c.translate(120, 200);
+    c.translate(120, portraitY);
     c.scale(3.2, 3.2);
     if (Game.entities && Game.entities.drawMomokoSprite) {
       Game.entities.drawMomokoSprite(c, 0, 0, Game.customization, Math.floor(introAnimTimer / 8) % 4);
@@ -1808,7 +1817,6 @@
     c.restore();
 
     /* Story panel – glassy gradient card with a double edge and gloss */
-    var panelX = 240, panelY = 72, panelW = 540, panelH = 320;
     c.save();
     c.shadowColor = 'rgba(0, 0, 0, 0.4)';
     c.shadowBlur = 16;
@@ -2735,7 +2743,11 @@
     setView: setView,
     isHot: function () { return anyHot; },
     drawTitleScreen: function (c) {
+      /* The title clips itself to the viewport; pop that before the
+         How-to card so its scrim can dim the whole tablet screen. */
+      c.save();
       drawTitleScreen(c);
+      c.restore();
       if (showInstructions) drawInstructionsOverlay(c);
     },
     drawHUD: drawHUD,
