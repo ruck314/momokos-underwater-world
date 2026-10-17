@@ -26,9 +26,11 @@
     floorY: 440,
 
     /* Background color gradient stops */
-    bgTop: '#0a1628',
-    bgMid: '#0d2847',
-    bgBottom: '#162e50',
+    /* Same family as the title's sea so play doesn't feel like a
+       darker, different ocean. */
+    bgTop: '#12426e',
+    bgMid: '#0f3058',
+    bgBottom: '#163655',
 
     platforms: [
       /* Starting area – a few rocks to learn swimming */
