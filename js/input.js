@@ -299,28 +299,20 @@
     /* Inner-edge glow framing the game viewport so the bezel reads as a
        deliberate frame rather than letterboxing. Skip a side if the game
        viewport is already flush against that edge. */
-    if (gx > 0) paintEdgeGlow(c, gx - 10, 0, 10, ch, 'h', false);
-    if (rEdge < cw) paintEdgeGlow(c, rEdge, 0, 10, ch, 'h', true);
-    if (gy > 0) paintEdgeGlow(c, 0, gy - 10, cw, 10, 'v', false);
-    if (bEdge < ch) paintEdgeGlow(c, 0, bEdge, cw, 10, 'v', true);
+    /* The glow and frame hug the viewport only. Running them the full
+       canvas width/height crossed the side bezels and split them into
+       boxes. */
+    if (gx > 0) paintEdgeGlow(c, gx - 10, gy, 10, GAME_H, 'h', false);
+    if (rEdge < cw) paintEdgeGlow(c, rEdge, gy, 10, GAME_H, 'h', true);
+    if (gy > 0) paintEdgeGlow(c, gx, gy - 10, GAME_W, 10, 'v', false);
+    if (bEdge < ch) paintEdgeGlow(c, gx, bEdge, GAME_W, 10, 'v', true);
 
     /* Hairline border at the game viewport edges (drawn in bezel space –
        the state renderer will paint over the inside of the rect). */
     if (gx > 0 || gy > 0 || rEdge < cw || bEdge < ch) {
       c.strokeStyle = '#1a3a60';
       c.lineWidth = 2;
-      if (gx > 0) {
-        c.beginPath(); c.moveTo(gx + 0.5, 0); c.lineTo(gx + 0.5, ch); c.stroke();
-      }
-      if (rEdge < cw) {
-        c.beginPath(); c.moveTo(rEdge - 0.5, 0); c.lineTo(rEdge - 0.5, ch); c.stroke();
-      }
-      if (gy > 0) {
-        c.beginPath(); c.moveTo(0, gy + 0.5); c.lineTo(cw, gy + 0.5); c.stroke();
-      }
-      if (bEdge < ch) {
-        c.beginPath(); c.moveTo(0, bEdge - 0.5); c.lineTo(cw, bEdge - 0.5); c.stroke();
-      }
+      c.strokeRect(gx - 1, gy - 1, GAME_W + 2, GAME_H + 2);
     }
     c.restore();
 

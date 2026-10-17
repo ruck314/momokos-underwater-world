@@ -21,6 +21,16 @@
   /* ---- Helpers ---- */
   var FONT = '"M PLUS Rounded 1c", sans-serif';
 
+  /* The rectangle the ambient backdrops fill, in game coordinates. It is
+     the 800x480 viewport everywhere except on touch devices, where the
+     engine widens it to the whole canvas for the title, customize, intro
+     and victory screens so the sea fills the bezel instead of a dark
+     frame. Everything else on those screens stays clipped to the
+     viewport via clipGame(). */
+  var VIEW = { x: 0, y: 0, w: W, h: H };
+  function setView(x, y, w, h) { VIEW.x = x; VIEW.y = y; VIEW.w = w; VIEW.h = h; }
+  function clipGame(c) { c.beginPath(); c.rect(0, 0, W, H); c.clip(); }
+
   /* True when the mouse is over the rect, in whatever coordinate space
      the caller is currently drawing in (the pointer is stored in
      backing-store pixels and mapped back through the live transform). */
@@ -135,26 +145,31 @@
     grad.addColorStop(0.45, bright ? '#114574' : '#0d2c52');
     grad.addColorStop(1, '#0a1a36');
     c.fillStyle = grad;
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
 
     var sun = c.createRadialGradient(W * 0.5, -40, 10, W * 0.5, -40, 420);
     sun.addColorStop(0, 'rgba(170, 235, 255, 0.35)');
     sun.addColorStop(1, 'rgba(170, 235, 255, 0)');
     c.fillStyle = sun;
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
 
     c.save();
     var rg = c.createLinearGradient(0, 0, 0, H);
     rg.addColorStop(0, 'rgba(190, 240, 255, 0.13)');
     rg.addColorStop(1, 'rgba(190, 240, 255, 0)');
     c.fillStyle = rg;
-    for (var r = 0; r < 5; r++) {
+    /* Rays continue past the viewport when the view is widened; each one
+       is the same slanted band, just extended along its own slope. */
+    var y0 = VIEW.y, y1 = VIEW.y + VIEW.h;
+    for (var r = -2; r < 8; r++) {
       var rx = 80 + r * 170 + Math.sin(t * 0.005 + r * 1.7) * 30;
+      if (rx + 110 < VIEW.x || rx - 30 > VIEW.x + VIEW.w) continue;
+      var tl = rx, tr = rx + 34 + (r % 2) * 20, bl = rx - 30, br = rx + 110;
       c.beginPath();
-      c.moveTo(rx, 0);
-      c.lineTo(rx + 34 + (r % 2) * 20, 0);
-      c.lineTo(rx + 110, H);
-      c.lineTo(rx - 30, H);
+      c.moveTo(tl + (bl - tl) * (y0 / H), y0);
+      c.lineTo(tr + (br - tr) * (y0 / H), y0);
+      c.lineTo(tr + (br - tr) * (y1 / H), y1);
+      c.lineTo(tl + (bl - tl) * (y1 / H), y1);
       c.closePath();
       c.fill();
     }
@@ -164,7 +179,7 @@
       var b = titleBubbles[i];
       b.wobble += 0.02;
       b.y -= b.speed;
-      if (b.y < -10) { b.y = H + 10; b.x = Math.random() * W; }
+      if (b.y < VIEW.y - 10) { b.y = VIEW.y + VIEW.h + 10; b.x = VIEW.x + Math.random() * VIEW.w; }
       var bx = b.x + Math.sin(b.wobble) * 15;
       c.save();
       c.globalAlpha = 0.35;
@@ -194,27 +209,55 @@
     { x: 18, h: 110 }, { x: 64, h: 80 }, { x: 140, h: 120 }, { x: 236, h: 70 },
     { x: 566, h: 76 }, { x: 650, h: 124 }, { x: 732, h: 92 }, { x: 786, h: 112 },
   ];
-  function drawReefForeground(c, t) {
-    var sg = c.createLinearGradient(0, 440, 0, H);
+  /* The sand bank alone, spanning the whole view rect so it runs on under
+     the bezel when the view is widened. Painted before clipGame(). */
+  function drawReefSand(c) {
+    var x0 = VIEW.x, x1 = VIEW.x + VIEW.w, bottom = VIEW.y + VIEW.h;
+    /* Below the viewport the sand keeps darkening into the deep, so a
+       tall bezel reads as sea floor rather than a flat brown slab. */
+    var sg = c.createLinearGradient(0, 440, 0, Math.max(H, bottom));
     sg.addColorStop(0, '#b39a6e');
-    sg.addColorStop(1, '#5b4a35');
+    sg.addColorStop(Math.min(1, (H - 440) / (Math.max(H, bottom) - 440)), '#5b4a35');
+    sg.addColorStop(1, '#2e2419');
     c.fillStyle = sg;
     c.beginPath();
-    c.moveTo(0, H);
-    for (var x = 0; x <= W; x += 10) {
+    c.moveTo(x0, bottom);
+    for (var x = x0; x <= x1 + 10; x += 10) {
       c.lineTo(x, 448 + Math.sin(x * 0.011) * 6 + Math.sin(x * 0.031) * 3);
     }
-    c.lineTo(W, H);
+    c.lineTo(x1, bottom);
     c.closePath();
     c.fill();
     c.strokeStyle = 'rgba(255, 240, 200, 0.35)';
     c.lineWidth = 1.5;
     c.beginPath();
-    for (var x2 = 0; x2 <= W; x2 += 10) {
+    for (var x2 = x0; x2 <= x1 + 10; x2 += 10) {
       var y2 = 449 + Math.sin(x2 * 0.011) * 6 + Math.sin(x2 * 0.031) * 3;
-      if (x2 === 0) c.moveTo(x2, y2); else c.lineTo(x2, y2);
+      if (x2 === x0) c.moveTo(x2, y2); else c.lineTo(x2, y2);
     }
     c.stroke();
+
+    /* A few half-buried pebbles on the deeper sand, placed by a fixed
+       hash so they never shimmer between frames. */
+    if (bottom > H + 30) {
+      c.fillStyle = 'rgba(255, 240, 200, 0.10)';
+      c.strokeStyle = 'rgba(255, 240, 200, 0.16)';
+      c.lineWidth = 1;
+      for (var px = Math.floor(x0 / 90) * 90; px < x1; px += 90) {
+        for (var py = H + 20; py < bottom - 10; py += 56) {
+          var h = ((px * 7919) ^ (py * 104729)) & 1023;
+          if ((h & 3) !== 0) continue;
+          var ox = px + (h % 70), oy = py + ((h >> 5) % 40);
+          var rw = 6 + (h % 7), rh = 2.5 + ((h >> 3) % 3);
+          c.beginPath(); c.ellipse(ox, oy, rw, rh, 0, 0, Math.PI * 2);
+          c.fill(); c.stroke();
+        }
+      }
+    }
+  }
+
+  function drawReefForeground(c, t) {
+    drawReefSand(c);
 
     for (var w = 0; w < FG_WEEDS.length; w++) {
       var wd = FG_WEEDS[w];
@@ -315,6 +358,8 @@
     var t = titleAnimTimer;
 
     drawSeaBackdrop(c, t);
+    drawReefSand(c);
+    clipGame(c);
     drawTitleFish(c, t);
 
     /* Momoko swimming on the spot at the left, trailing bubbles */
@@ -834,6 +879,8 @@
 
     c.save();
     drawSeaBackdrop(c, t, true);
+    drawReefSand(c);
+    clipGame(c);
 
     /* Rising glowing bubbles and sparkles from the reef */
     if (t % 5 === 0) {
@@ -1451,7 +1498,8 @@
     /* Background – the title's sea, dimmed so the controls stay legible */
     drawSeaBackdrop(c, t);
     c.fillStyle = 'rgba(4, 16, 36, 0.45)';
-    c.fillRect(0, 0, W, H);
+    c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    clipGame(c);
 
     /* Title */
     c.save();
@@ -1729,6 +1777,7 @@
 
     /* Background – same sea backdrop as the title for continuity */
     drawSeaBackdrop(c, introAnimTimer);
+    clipGame(c);
 
     /* Momoko portrait (left) on a soft glow */
     var pg = c.createRadialGradient(120, 250, 10, 120, 250, 110);
@@ -2683,6 +2732,7 @@
   /* ---- Exports ---- */
   window.Game.ui = {
     beginFrame: function () { anyHot = false; },
+    setView: setView,
     isHot: function () { return anyHot; },
     drawTitleScreen: function (c) {
       drawTitleScreen(c);

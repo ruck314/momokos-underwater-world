@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.8.0';
+  Game.VERSION = 'v1.9.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -576,7 +576,13 @@
        button (which is drawn last, in canvas space). The game viewport in
        the middle is fully overwritten by the state renderer below, so it
        doesn't matter that we paint across it here. */
-    if (Game.input.isTouch()) {
+    /* Menu screens have no touch controls, so on a tablet they paint
+       their own sea across the whole canvas instead of sitting in a dark
+       frame. Gameplay keeps the bezel so the D-pad has a quiet backdrop. */
+    var fullBleed = Game.input.isTouch() && (
+      state === State.TITLE || state === State.CUSTOMIZE ||
+      state === State.INTRO || state === State.VICTORY);
+    if (Game.input.isTouch() && !fullBleed) {
       Game.input.drawTouchStrip(ctx, false);
     }
 
@@ -584,11 +590,16 @@
        0..H coordinates regardless of the side / top / bottom padding. */
     ctx.save();
     if (GAME_X || GAME_Y) ctx.translate(GAME_X, GAME_Y);
-    /* Keep the world inside the viewport so it can't bleed into the
-       touch bezels. */
-    ctx.beginPath();
-    ctx.rect(0, 0, W, H);
-    ctx.clip();
+    if (fullBleed) {
+      Game.ui.setView(-GAME_X, -GAME_Y, CANVAS_W, CANVAS_H);
+    } else {
+      Game.ui.setView(0, 0, W, H);
+      /* Keep the world inside the viewport so it can't bleed into the
+         touch bezels. */
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.clip();
+    }
     if (Game.ui.beginFrame) Game.ui.beginFrame();
 
     switch (state) {
