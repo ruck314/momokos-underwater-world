@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.7.0';
+  Game.VERSION = 'v1.8.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -529,8 +529,15 @@
           beachReady = true;
         }
 
-        /* Camera follow */
+        /* Camera follow. During the boss fight, frame the midpoint
+           between Momoko and Moni so Moni is on screen while she taunts,
+           but keep Momoko at least 80px from the left edge and 120px
+           from the right. */
         var targetCamX = player.x - W / 2 + player.w / 2;
+        if (bossActivated && boss && boss.active && !boss.defeated) {
+          var mid = (player.x + player.w / 2 + boss.x + boss.w / 2) / 2 - W / 2;
+          targetCamX = Math.max(player.x + player.w + 120 - W, Math.min(player.x - 80, mid));
+        }
         var targetCamY = player.y - H / 2 + player.h / 2;
         camera.x += (targetCamX - camera.x) * 0.08;
         camera.y += (targetCamY - camera.y) * 0.08;
@@ -670,7 +677,8 @@
         ctx,
         pendingDialogue.speaker,
         pendingDialogue.text,
-        CANVAS_W, CANVAS_H, GAME_X, GAME_Y
+        CANVAS_W, CANVAS_H, GAME_X, GAME_Y,
+        player ? GAME_Y + player.y + player.h - camera.y : null
       );
     }
   }

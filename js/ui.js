@@ -400,11 +400,72 @@
     c.font = 'bold 24px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.fillText(Game.i18n.t('howToPlay'), W / 2, 80);
-    c.fillStyle = '#ccddee';
-    c.font = '16px "M PLUS Rounded 1c", sans-serif';
-    c.textAlign = 'center';
-    wrapText(c, Game.i18n.t('instructions'), W / 2, 130, 600, 28);
+    /* One illustrated row per instruction line: keycaps / icon on the
+       left, the text beside it. */
+    var lines = Game.i18n.t('instructions').split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var ry = 118 + i * 56;
+      c.fillStyle = 'rgba(124, 232, 255, 0.07)';
+      roundRect(c, 140, ry, W - 280, 46, 10);
+      c.fill();
+      drawHowToIcon(c, i, 222, ry + 23);
+      c.fillStyle = '#e2f2ff';
+      fitFont(c, lines[i], W - 280 - 170, 16, 'bold');
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.fillText(lines[i], 300, ry + 24);
+    }
+    c.textBaseline = 'alphabetic';
     drawButton(c, 'OK', W / 2 - 60, 350, 120, 40);
+    c.restore();
+  }
+
+  function drawKeycap(c, x, y, w, h, label) {
+    c.fillStyle = '#05182e';
+    roundRect(c, x, y + 2, w, h, 5);
+    c.fill();
+    c.fillStyle = '#d8ecff';
+    roundRect(c, x, y, w, h, 5);
+    c.fill();
+    c.fillStyle = '#ffffff';
+    roundRect(c, x + 2, y + 1.5, w - 4, h * 0.45, 4);
+    c.fill();
+    c.fillStyle = '#123a5e';
+    c.font = 'bold ' + Math.round(h * 0.5) + 'px ' + FONT;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText(label, x + w / 2, y + h / 2 + 1);
+  }
+
+  /* Row icons for the how-to-play overlay: 0 swim, 1 bubble, 2 pause,
+     3 goal. */
+  function drawHowToIcon(c, row, cx, cy) {
+    c.save();
+    if (row === 0) {
+      drawKeycap(c, cx - 9, cy - 19, 18, 17, '\u25B2');
+      drawKeycap(c, cx - 29, cy + 1, 18, 17, '\u25C0');
+      drawKeycap(c, cx - 9, cy + 1, 18, 17, '\u25BC');
+      drawKeycap(c, cx + 11, cy + 1, 18, 17, '\u25B6');
+    } else if (row === 1) {
+      drawKeycap(c, cx - 46, cy - 10, 62, 20, 'Space');
+      c.strokeStyle = '#a8e4ff';
+      c.fillStyle = 'rgba(140, 210, 255, 0.35)';
+      c.lineWidth = 1.5;
+      c.beginPath(); c.arc(cx + 32, cy, 9, 0, Math.PI * 2); c.fill(); c.stroke();
+      c.beginPath(); c.arc(cx + 46, cy - 8, 5, 0, Math.PI * 2); c.fill(); c.stroke();
+      c.fillStyle = '#ffffff';
+      c.beginPath(); c.arc(cx + 29, cy - 3, 2.2, 0, Math.PI * 2); c.fill();
+    } else if (row === 2) {
+      drawKeycap(c, cx - 38, cy - 10, 34, 20, 'Esc');
+      drawKeycap(c, cx + 2, cy - 10, 22, 20, 'P');
+      c.fillStyle = '#7ce8ff';
+      c.fillRect(cx + 32, cy - 8, 4, 16);
+      c.fillRect(cx + 40, cy - 8, 4, 16);
+    } else {
+      drawStarfish(c, cx - 14, cy, 15, 0.1, '#ffcc44');
+      c.fillStyle = '#ff5577';
+      drawHeart(c, cx + 22, cy + 2, 12);
+    }
     c.restore();
   }
 
@@ -427,17 +488,30 @@
 
   /* ---- HUD ---- */
   function drawHUD(c, player) {
-    /* Hearts */
+    /* Hearts on a soft plate so sprites drifting past never swallow them */
+    c.fillStyle = 'rgba(4, 18, 40, 0.55)';
+    roundRect(c, 3, 5, player.maxHealth * 28 + 2, 28, 14);
+    c.fill();
+    c.strokeStyle = 'rgba(124, 232, 255, 0.35)';
+    c.lineWidth = 1;
+    c.stroke();
     for (var i = 0; i < player.maxHealth; i++) {
-      var hx = 16 + i * 28;
-      var hy = 20;
+      var hx = 17 + i * 28;
+      var hy = 21;
+      /* Dark rim */
+      c.fillStyle = 'rgba(30, 6, 18, 0.85)';
+      drawHeart(c, hx, hy + 0.5, 12.5);
       if (i < player.health) {
-        /* Full heart */
+        /* Full heart with a glossy highlight */
         c.fillStyle = '#ff3355';
         drawHeart(c, hx, hy, 10);
+        c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        c.beginPath();
+        c.ellipse(hx - 4, hy - 5.5, 2.4, 1.6, -0.5, 0, Math.PI * 2);
+        c.fill();
       } else {
         /* Empty heart */
-        c.fillStyle = '#443344';
+        c.fillStyle = '#4a3550';
         drawHeart(c, hx, hy, 10);
       }
     }
@@ -605,7 +679,7 @@
      inside them; the box floats below the viewport if there's bezel
      room, otherwise it hugs the bottom of the gameplay area with
      reduced height. */
-  function drawDialogue(c, speaker, text, cw, ch, gx, gy) {
+  function drawDialogue(c, speaker, text, cw, ch, gx, gy, avoidY) {
     /* Back-compat: if canvas dims aren't supplied, fall back to
        in-viewport rendering at the bottom of the gameplay area. */
     if (cw == null) { cw = W; ch = H; gx = 0; gy = 0; }
@@ -628,14 +702,22 @@
     }
     var boxW = Math.min(560, cw - 40);
     var boxX = (cw - boxW) / 2;
+    /* When the box has to overlap gameplay and Momoko (avoidY, canvas
+       space) is down where it would sit, move it to the top instead,
+       below the hearts and boss bar. */
+    var atTop = bezelBelow < 56 && avoidY != null && avoidY > boxY - 40;
 
     c.save();
     /* Size the box to the text so a third line never spills out. The
-       bottom edge stays where the layout above put it. */
+       bottom edge stays where the layout above put it (or the top edge,
+       when it sits at the top). */
     c.font = '14px ' + FONT;
     var lines = layoutLines(c, text, boxW - 32);
     var need = 34 + lines.length * 19 + 10;
-    if (need > boxH) { boxY -= need - boxH; boxH = need; }
+    if (atTop) {
+      boxH = Math.max(56, need);
+      boxY = gy + 58;
+    } else if (need > boxH) { boxY -= need - boxH; boxH = need; }
 
     c.fillStyle = 'rgba(0, 0, 0, 0.35)';
     roundRect(c, boxX, boxY + 3, boxW, boxH, 12);
@@ -953,12 +1035,16 @@
      Grid is sized for up to 3 rows × 3 cols so the 9-variant food tab
      fits without scrolling. Colors + skin sit below at fixed Y so the
      layout stays stable when switching tabs. */
-  var TAB_X = 320, TAB_Y = 60, TAB_W = 76, TAB_H = 34, TAB_GAP = 4;
-  var GRID_X = 320, GRID_Y = 100, GRID_COLS = 3, GRID_TILE_W = 146, GRID_TILE_H = 58, GRID_GAP = 6;
-  var COLOR_X = 320, COLOR_STEP = 42;
+  var TAB_X = 304, TAB_Y = 62, TAB_W = 76, TAB_H = 34, TAB_GAP = 4;
+  var GRID_X = 304, GRID_Y = 106, GRID_COLS = 3, GRID_TILE_W = 154, GRID_TILE_H = 58, GRID_GAP = 7;
+  var COLOR_X = 304, COLOR_STEP = 42;
+  /* Panel card framing the tabs, grid and swatches; Start sits centred
+     under it. */
+  var PANEL_X = 292, PANEL_Y = 52, PANEL_W = 500, PANEL_H = 358;
   var START_BTN_W = 200, START_BTN_H = 46;
-  var START_BTN_X = W / 2 - START_BTN_W / 2 + 150;
+  var START_BTN_X = PANEL_X + PANEL_W / 2 - START_BTN_W / 2;
   var START_BTN_Y = 420;
+  var customizeTimer = 0;
 
   function getTab(id) {
     for (var i = 0; i < customTabs.length; i++) if (customTabs[i].id === id) return customTabs[i];
@@ -1359,30 +1445,76 @@
   }
 
   function drawCustomizeScreen(c) {
-    /* Background */
-    var grad = c.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, '#0a1628');
-    grad.addColorStop(1, '#162e50');
-    c.fillStyle = grad;
+    customizeTimer++;
+    var t = customizeTimer;
+
+    /* Background – the title's sea, dimmed so the controls stay legible */
+    drawSeaBackdrop(c, t);
+    c.fillStyle = 'rgba(4, 16, 36, 0.45)';
     c.fillRect(0, 0, W, H);
 
     /* Title */
-    c.fillStyle = '#66ccff';
-    c.font = 'bold 26px "M PLUS Rounded 1c", sans-serif';
+    c.save();
+    c.font = 'bold 26px ' + FONT;
     c.textAlign = 'center';
-    c.fillText(Game.i18n.t('customize'), W / 2, 36);
+    c.lineJoin = 'round';
+    c.lineWidth = 5;
+    c.strokeStyle = 'rgba(4, 20, 44, 0.9)';
+    c.strokeText(Game.i18n.t('customize'), W / 2, 38);
+    c.fillStyle = '#7fd8ff';
+    c.fillText(Game.i18n.t('customize'), W / 2, 38);
+    c.restore();
+
+    /* Panel card behind the controls */
+    c.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    roundRect(c, PANEL_X, PANEL_Y + 4, PANEL_W, PANEL_H, 16);
+    c.fill();
+    c.fillStyle = 'rgba(8, 34, 62, 0.88)';
+    roundRect(c, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 16);
+    c.fill();
+    c.strokeStyle = 'rgba(124, 232, 255, 0.45)';
+    c.lineWidth = 1.5;
+    c.stroke();
 
     /* Preview stage – soft radial glow so Momoko pops against the bg */
-    var stageCX = 160, stageCY = 240;
+    var stageCX = 150, stageCY = 236;
     var stageGrad = c.createRadialGradient(stageCX, stageCY, 20, stageCX, stageCY, 150);
-    stageGrad.addColorStop(0, 'rgba(110,180,255,0.22)');
-    stageGrad.addColorStop(1, 'rgba(110,180,255,0)');
+    stageGrad.addColorStop(0, 'rgba(120,200,255,0.28)');
+    stageGrad.addColorStop(1, 'rgba(120,200,255,0)');
     c.fillStyle = stageGrad;
-    c.fillRect(10, 70, 300, 340);
+    c.fillRect(0, 70, 300, 340);
 
-    /* Momoko preview */
+    /* Sandy rock pedestal she stands on */
+    var pedY = 336;
+    c.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    c.beginPath();
+    c.ellipse(stageCX, pedY + 20, 96, 14, 0, 0, Math.PI * 2);
+    c.fill();
+    var pg = c.createLinearGradient(0, pedY - 14, 0, pedY + 20);
+    pg.addColorStop(0, '#d8c08e');
+    pg.addColorStop(1, '#8a7149');
+    c.fillStyle = pg;
+    c.beginPath();
+    c.ellipse(stageCX, pedY + 12, 88, 16, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillRect(stageCX - 88, pedY, 176, 12);
+    c.fillStyle = '#ead6a8';
+    c.beginPath();
+    c.ellipse(stageCX, pedY, 88, 16, 0, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = 'rgba(90, 68, 40, 0.5)';
+    c.lineWidth = 1.5;
+    c.stroke();
+    /* Little shells and a starfish on the rim */
+    c.fillStyle = '#ff9fb8';
+    c.beginPath(); c.arc(stageCX - 60, pedY + 2, 4, Math.PI, 0); c.fill();
+    c.fillStyle = '#ffd27a';
+    c.beginPath(); c.arc(stageCX + 66, pedY - 1, 3.5, Math.PI, 0); c.fill();
+    drawStarfish(c, stageCX + 46, pedY + 6, 6, t * 0.004, '#ff8a5c');
+
+    /* Momoko preview, bobbing gently above the pedestal */
     c.save();
-    c.translate(stageCX - 70, stageCY - 85);
+    c.translate(stageCX - 70, stageCY - 88 + Math.sin(t * 0.04) * 3);
     c.scale(5, 5);
     drawMomokoPreview(c, Game.customization);
     c.restore();
@@ -1449,7 +1581,7 @@
     if (activeTab.colorField && activeTab.colors) {
       var labelKey = activeTab.colorField === 'hair' ? 'hairColor'
                    : activeTab.colorField === 'suit' ? 'suitColor'
-                   : 'skinTone';
+                   : 'shoeColor';
       c.fillStyle = '#88aacc';
       c.font = '13px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'left';
