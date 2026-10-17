@@ -147,7 +147,10 @@
     c.fillStyle = grad;
     c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
 
-    var sun = c.createRadialGradient(W * 0.5, -40, 10, W * 0.5, -40, 420);
+    /* The sun sits above the top of whatever is on screen, so a tall
+       tablet view gets its glow at the real surface, not mid-water. */
+    var sunY = VIEW.y - 40;
+    var sun = c.createRadialGradient(W * 0.5, sunY, 10, W * 0.5, sunY, 420);
     sun.addColorStop(0, 'rgba(170, 235, 255, 0.35)');
     sun.addColorStop(1, 'rgba(170, 235, 255, 0)');
     c.fillStyle = sun;
@@ -175,6 +178,10 @@
     }
     c.restore();
 
+    /* A tall tablet view has open water above the viewport: show the
+       surface rippling at the top and a far-off school drifting by. */
+    if (VIEW.y < -60) drawUpperWater(c, t);
+
     for (var i = 0; i < titleBubbles.length; i++) {
       var b = titleBubbles[i];
       b.wobble += 0.02;
@@ -199,6 +206,46 @@
     }
   }
 
+  /* Surface ripple along the top of the view and a faint school of
+     distant fish crossing the water above the viewport. Only reached
+     when the view extends well above the 800x480 window. */
+  function drawUpperWater(c, t) {
+    var x0 = VIEW.x, x1 = VIEW.x + VIEW.w, sy = VIEW.y + 16;
+    var sg = c.createLinearGradient(0, VIEW.y, 0, sy + 30);
+    sg.addColorStop(0, 'rgba(190, 240, 255, 0.28)');
+    sg.addColorStop(1, 'rgba(190, 240, 255, 0)');
+    c.fillStyle = sg;
+    c.fillRect(x0, VIEW.y, VIEW.w, sy + 30 - VIEW.y);
+    c.save();
+    c.strokeStyle = 'rgba(220, 248, 255, 0.55)';
+    c.lineWidth = 2;
+    c.beginPath();
+    for (var x = x0; x <= x1 + 10; x += 10) {
+      var y = sy + Math.sin(x * 0.02 + t * 0.03) * 3 + Math.sin(x * 0.047 - t * 0.02) * 1.5;
+      if (x === x0) c.moveTo(x, y); else c.lineTo(x, y);
+    }
+    c.stroke();
+
+    /* The school: small silhouettes in a loose wedge, swimming right. */
+    var span = VIEW.w + 300;
+    var lead = x0 - 150 + ((t * 0.5 + VIEW.w * 0.6) % span);
+    var midY = VIEW.y + (-VIEW.y) * 0.55;
+    c.fillStyle = 'rgba(6, 30, 58, 0.45)';
+    for (var f = 0; f < 11; f++) {
+      var fx = lead - (f % 4) * 22 - Math.floor(f / 4) * 30;
+      var fy = midY + ((f * 37) % 50) - 25 + Math.sin(t * 0.04 + f) * 3;
+      var s = 0.8 + (f % 3) * 0.15;
+      c.beginPath();
+      c.ellipse(fx, fy, 8 * s, 3.4 * s, 0, 0, Math.PI * 2);
+      c.moveTo(fx - 7 * s, fy);
+      c.lineTo(fx - 13 * s, fy - 4 * s);
+      c.lineTo(fx - 13 * s, fy + 4 * s);
+      c.closePath();
+      c.fill();
+    }
+    c.restore();
+  }
+
   /* Sandy reef foreground along the bottom edge: a sand bank, corals and
      swaying seaweed clustered at both sides so the centre stays clear. */
   var FG_CORALS = [
@@ -211,19 +258,23 @@
   ];
   /* The sand bank alone, spanning the whole view rect so it runs on under
      the bezel when the view is widened. Painted before clipGame(). */
-  function drawReefSand(c) {
+  function drawReefSand(c, top) {
+    /* `top` is the ridge height; the title and victory use 448, screens
+       whose viewport content runs to the bottom put it below the window. */
+    top = top || 448;
     var x0 = VIEW.x, x1 = VIEW.x + VIEW.w, bottom = VIEW.y + VIEW.h;
     /* Below the viewport the sand keeps darkening into the deep, so a
        tall bezel reads as sea floor rather than a flat brown slab. */
-    var sg = c.createLinearGradient(0, 440, 0, Math.max(H, bottom));
+    var deep = Math.max(top + 32, bottom);
+    var sg = c.createLinearGradient(0, top - 8, 0, deep);
     sg.addColorStop(0, '#b39a6e');
-    sg.addColorStop(Math.min(1, (H - 440) / (Math.max(H, bottom) - 440)), '#5b4a35');
+    sg.addColorStop(Math.min(1, 40 / (deep - top + 8)), '#5b4a35');
     sg.addColorStop(1, '#2e2419');
     c.fillStyle = sg;
     c.beginPath();
     c.moveTo(x0, bottom);
     for (var x = x0; x <= x1 + 10; x += 10) {
-      c.lineTo(x, 448 + Math.sin(x * 0.011) * 6 + Math.sin(x * 0.031) * 3);
+      c.lineTo(x, sandRidgeY(x, top));
     }
     c.lineTo(x1, bottom);
     c.closePath();
@@ -232,19 +283,19 @@
     c.lineWidth = 1.5;
     c.beginPath();
     for (var x2 = x0; x2 <= x1 + 10; x2 += 10) {
-      var y2 = 449 + Math.sin(x2 * 0.011) * 6 + Math.sin(x2 * 0.031) * 3;
+      var y2 = sandRidgeY(x2, top) + 1;
       if (x2 === x0) c.moveTo(x2, y2); else c.lineTo(x2, y2);
     }
     c.stroke();
 
     /* A few half-buried pebbles on the deeper sand, placed by a fixed
        hash so they never shimmer between frames. */
-    if (bottom > H + 30) {
+    if (bottom > top + 62) {
       c.fillStyle = 'rgba(255, 240, 200, 0.10)';
       c.strokeStyle = 'rgba(255, 240, 200, 0.16)';
       c.lineWidth = 1;
       for (var px = Math.floor(x0 / 90) * 90; px < x1; px += 90) {
-        for (var py = H + 20; py < bottom - 10; py += 56) {
+        for (var py = top + 52; py < bottom - 10; py += 56) {
           var h = ((px * 7919) ^ (py * 104729)) & 1023;
           if ((h & 3) !== 0) continue;
           var ox = px + (h % 70), oy = py + ((h >> 5) % 40);
@@ -256,22 +307,73 @@
     }
   }
 
+  function sandRidgeY(x, top) {
+    return top + Math.sin(x * 0.011) * 6 + Math.sin(x * 0.031) * 3;
+  }
+
+  /* One swaying kelp blade rooted at (x, base). */
+  function drawWeed(c, x, base, h, sway) {
+    var wg = c.createLinearGradient(0, base - h, 0, base);
+    wg.addColorStop(0, '#5fd38a');
+    wg.addColorStop(1, '#16603a');
+    c.fillStyle = wg;
+    c.beginPath();
+    c.moveTo(x - 5, base);
+    c.bezierCurveTo(x - 12 + sway * 0.4, base - h * 0.4, x - 4 + sway, base - h * 0.75, x + sway * 1.2, base - h);
+    c.bezierCurveTo(x + 8 + sway, base - h * 0.7, x + 6 + sway * 0.4, base - h * 0.35, x + 6, base);
+    c.closePath();
+    c.fill();
+  }
+
+  /* Reef growth on the sand outside the 800x480 window, so on a tablet
+     the corals and kelp run on to the screen edges instead of stopping
+     at the viewport. With `top` below the window (customize, intro) the
+     whole width is decorated with smaller pieces that stay clear of the
+     window content. Painted before clipGame(). */
+  var SIDE_DECOR = [
+    { dx: 0, k: 'weed', h: 108 }, { dx: 30, k: 'coral', v: 1 }, { dx: 74, k: 'weed', h: 78 },
+    { dx: 118, k: 'coral', v: 0 }, { dx: 150, k: 'star' }, { dx: 182, k: 'weed', h: 124 },
+    { dx: 214, k: 'coral', v: 2 }, { dx: 262, k: 'weed', h: 66 },
+  ];
+  function drawReefSides(c, t, top) {
+    var inside = top < H;
+    if (inside ? VIEW.x > -40 : VIEW.y + VIEW.h < top + 40) return;
+    var x0 = VIEW.x, x1 = VIEW.x + VIEW.w, scale = inside ? 1 : 0.5;
+    for (var tx = Math.floor(x0 / 300) * 300; tx < x1 + 40; tx += 300) {
+      for (var d = 0; d < SIDE_DECOR.length; d++) {
+        var it = SIDE_DECOR[d], x = tx + it.dx;
+        if (x < x0 - 30 || x > x1 + 30) continue;
+        if (inside && x > -16 && x < W + 16) continue;
+        var ry = sandRidgeY(x, top);
+        if (it.k === 'weed') {
+          drawWeed(c, x, inside ? H : ry + 12, it.h * scale, Math.sin(t * 0.025 + x * 0.07) * 10 * scale);
+        } else if (it.k === 'coral' && Game.engine && Game.engine.drawCoral) {
+          c.save();
+          c.translate(x, ry + 4);
+          c.scale(1.5 * scale, 1.5 * scale);
+          Game.engine.drawCoral(c, 0, 0, it.v, x);
+          c.restore();
+        } else if (it.k === 'star') {
+          drawStarfish(c, x, ry + 10, 9 * scale + 2, x * 0.37, '#ff9a6a');
+        }
+      }
+    }
+  }
+
+  /* Screens whose content fills the window (customize, intro) get their
+     sea floor just below it when the tablet view leaves room there. */
+  function drawFloorBelow(c, t) {
+    if (VIEW.y + VIEW.h < H + 90) return;
+    drawReefSand(c, H + 34);
+    drawReefSides(c, t, H + 34);
+  }
+
   function drawReefForeground(c, t) {
     drawReefSand(c);
 
     for (var w = 0; w < FG_WEEDS.length; w++) {
       var wd = FG_WEEDS[w];
-      var sway = Math.sin(t * 0.025 + w * 1.3) * 10;
-      var wg = c.createLinearGradient(0, H - wd.h, 0, H);
-      wg.addColorStop(0, '#5fd38a');
-      wg.addColorStop(1, '#16603a');
-      c.fillStyle = wg;
-      c.beginPath();
-      c.moveTo(wd.x - 5, H);
-      c.bezierCurveTo(wd.x - 12 + sway * 0.4, H - wd.h * 0.4, wd.x - 4 + sway, H - wd.h * 0.75, wd.x + sway * 1.2, H - wd.h);
-      c.bezierCurveTo(wd.x + 8 + sway, H - wd.h * 0.7, wd.x + 6 + sway * 0.4, H - wd.h * 0.35, wd.x + 6, H);
-      c.closePath();
-      c.fill();
+      drawWeed(c, wd.x, H, wd.h, Math.sin(t * 0.025 + w * 1.3) * 10);
     }
     if (Game.engine && Game.engine.drawCoral) {
       for (var k = 0; k < FG_CORALS.length; k++) {
@@ -359,6 +461,7 @@
 
     drawSeaBackdrop(c, t);
     drawReefSand(c);
+    drawReefSides(c, t, 448);
     clipGame(c);
     drawTitleFish(c, t);
 
@@ -411,18 +514,6 @@
     var muteLabel = Game.i18n.t(Game.audio.isMuted() ? 'soundOff' : 'soundOn');
     drawButton(c, muteLabel, W / 2 - 90, 380, 180, 36);
 
-    /* Version stamp (bottom-right) – helps us know which build is running */
-    if (Game.VERSION) {
-      c.save();
-      c.fillStyle = 'rgba(255, 255, 255, 0.55)';
-      c.font = '11px "M PLUS Rounded 1c", sans-serif';
-      c.textAlign = 'right';
-      c.textBaseline = 'alphabetic';
-      var stamp = Game.VERSION + (Game.BUILD ? ' (' + Game.BUILD + ')' : '');
-      c.fillText(stamp, W - 8, H - 8);
-      c.restore();
-    }
-
     /* Instructions overlay flag */
     return false;
   }
@@ -441,10 +532,8 @@
     c.strokeStyle = '#7ce8ff';
     c.lineWidth = 2;
     c.stroke();
-    c.fillStyle = '#66ccff';
-    c.font = 'bold 24px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
-    c.fillText(Game.i18n.t('howToPlay'), W / 2, 80);
+    drawHeading(c, Game.i18n.t('howToPlay'), W / 2, 80, 26, '#9ff2ff');
     /* One illustrated row per instruction line: keycaps / icon on the
        left, the text beside it. */
     var lines = Game.i18n.t('instructions').split('\n');
@@ -575,6 +664,36 @@
     }
   }
 
+  /* Bottom-right corner of the view rect: the screen corner on tablet
+     full-bleed / dimmed screens, the viewport corner everywhere else. */
+  function drawVersionStamp(c, color) {
+    if (!Game.VERSION) return;
+    c.save();
+    c.fillStyle = color;
+    c.font = '11px ' + FONT;
+    c.textAlign = 'right';
+    c.textBaseline = 'alphabetic';
+    c.fillText(Game.VERSION + (Game.BUILD ? ' (' + Game.BUILD + ')' : ''), VIEW.x + VIEW.w - 8, VIEW.y + VIEW.h - 8);
+    c.restore();
+  }
+
+  /* Menu heading in the outlined, glowing style the title, game-over and
+     victory text use. Expects textAlign/baseline already set. */
+  function drawHeading(c, text, x, y, size, fill) {
+    c.save();
+    fitFont(c, text, 360, size, 'bold');
+    c.lineJoin = 'round';
+    c.lineWidth = 7;
+    c.strokeStyle = '#0b2f5c';
+    c.shadowColor = 'rgba(80, 210, 255, 0.55)';
+    c.shadowBlur = 12;
+    c.strokeText(text, x, y);
+    c.shadowBlur = 0;
+    c.fillStyle = fill;
+    c.fillText(text, x, y);
+    c.restore();
+  }
+
   function drawHeart(c, cx, cy, size) {
     c.save();
     c.beginPath();
@@ -592,11 +711,9 @@
     c.save();
     c.fillStyle = 'rgba(0,0,0,0.7)';
     c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
-    c.fillStyle = '#66ccff';
-    c.font = 'bold 32px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     /* Centred over the button column and below the waterline scallops. */
-    c.fillText(Game.i18n.t('paused'), W / 2 + 100, 130);
+    drawHeading(c, Game.i18n.t('paused'), W / 2 + 100, 130, 34, '#9ff2ff');
 
     /* Floss-dance Momoko – phase advances at ~1.7Hz and the pose math
        smooths the beat with a tanh sigmoid so she transitions between
@@ -619,14 +736,7 @@
 
     /* Version stamp – matches the title-screen stamp so we can tell at a
        glance which build is paused (handy for bug reports). */
-    if (Game.VERSION) {
-      c.fillStyle = '#6688aa';
-      c.font = '11px "M PLUS Rounded 1c", sans-serif';
-      c.textAlign = 'right';
-      c.textBaseline = 'alphabetic';
-      var pStamp = Game.VERSION + (Game.BUILD ? ' (' + Game.BUILD + ')' : '');
-      c.fillText(pStamp, W - 8, H - 8);
-    }
+    drawVersionStamp(c, '#6688aa');
     c.restore();
   }
 
@@ -880,6 +990,7 @@
     c.save();
     drawSeaBackdrop(c, t, true);
     drawReefSand(c);
+    drawReefSides(c, t, 448);
     clipGame(c);
 
     /* Rising glowing bubbles and sparkles from the reef */
@@ -1499,6 +1610,7 @@
     drawSeaBackdrop(c, t);
     c.fillStyle = 'rgba(4, 16, 36, 0.45)';
     c.fillRect(VIEW.x, VIEW.y, VIEW.w, VIEW.h);
+    drawFloorBelow(c, t);
     clipGame(c);
 
     /* Title */
@@ -1777,6 +1889,7 @@
 
     /* Background – same sea backdrop as the title for continuity */
     drawSeaBackdrop(c, introAnimTimer);
+    drawFloorBelow(c, introAnimTimer);
     clipGame(c);
 
     /* Size the story card to its text and centre it between the heading
@@ -2748,6 +2861,9 @@
       c.save();
       drawTitleScreen(c);
       c.restore();
+      /* Version stamp – helps us know which build is running. Drawn
+         unclipped so it sits in the screen corner on a tablet. */
+      drawVersionStamp(c, 'rgba(255, 255, 255, 0.55)');
       if (showInstructions) drawInstructionsOverlay(c);
     },
     drawHUD: drawHUD,

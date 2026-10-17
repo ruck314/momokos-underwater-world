@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.11.0';
+  Game.VERSION = 'v1.12.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -659,7 +659,10 @@
         break;
 
       case State.PAUSED:
-        drawClipped(function () { renderGame(); Game.ui.drawHUD(ctx, player); });
+        /* No HUD under the scrim: the hearts are lost in the dim anyway,
+           and on desktop the Game Center link (shown while paused) sat
+           right on top of them. */
+        drawClipped(renderGame);
         Game.ui.drawPauseMenu(ctx);
         break;
 
