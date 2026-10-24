@@ -122,6 +122,42 @@
     playNote(660, 'square', 0.06, 0.15, sfxGain);
   }
 
+  /* Pearl pickup: a quick glassy two-note "ting" that stays out of the
+     way when a trail of them is collected in a row. */
+  function pearl() {
+    if (!ctx) return;
+    var t = ctx.currentTime;
+    playNote(1568, 'sine', 0.07, 0.22, sfxGain, t);
+    playNote(2093, 'sine', 0.14, 0.18, sfxGain, t + 0.06);
+    playNote(1047, 'triangle', 0.12, 0.08, sfxGain, t + 0.02);
+  }
+
+  /* Treasure chest creaking open with a shower of pearls */
+  function chestOpen() {
+    if (!ctx) return;
+    var t = ctx.currentTime;
+    playNote(180, 'sawtooth', 0.12, 0.12, sfxGain, t);
+    noise(0.08, sfxGain, t);
+    var arp = [784, 988, 1175, 1568, 1976];
+    for (var i = 0; i < arp.length; i++) {
+      playNote(arp[i], 'triangle', 0.1, 0.18, sfxGain, t + 0.12 + i * 0.05);
+    }
+  }
+
+  /* Short fanfare for clearing a reef (lighter than the final victory) */
+  function levelClearJingle() {
+    if (!ctx) return;
+    var t = ctx.currentTime;
+    var notes = [659, 784, 1047, 1319];
+    var dur = [0.12, 0.12, 0.12, 0.45];
+    var time = t;
+    for (var i = 0; i < notes.length; i++) {
+      playNote(notes[i], 'square', dur[i], 0.25, sfxGain, time);
+      playNote(notes[i] * 0.5, 'triangle', dur[i], 0.12, sfxGain, time);
+      time += dur[i];
+    }
+  }
+
   function victoryJingle() {
     if (!ctx) return;
     var t = ctx.currentTime;
@@ -290,6 +326,9 @@
         case 'select': menuSelect(); break;
         case 'victory': victoryJingle(); break;
         case 'gameOver': gameOverSfx(); break;
+        case 'pearl': pearl(); break;
+        case 'chest': chestOpen(); break;
+        case 'levelClear': levelClearJingle(); break;
       }
     },
     startMusic: function (type) {

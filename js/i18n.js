@@ -149,6 +149,37 @@
       moniDefeat: 'Nooo! My dark magic is… fading…',
       moniApology: "I… I'm sorry. I only wanted friends…",
       heroVictory: "Then swim beside us, Moni. The ocean has room for everyone!",
+
+      /* ---- Levels / progression ---- */
+      level1Name: 'Coral Reef',
+      level2Name: 'Sunken Ship',
+      level3Name: 'Deep Trench',
+      chooseReef: 'Choose a Reef',
+      levelSelect: 'Level Select',
+      levelClear: 'Level Clear!',
+      nextLevel: 'Next Level',
+      pearls: 'Pearls',
+      pearlsCollected: 'Pearls collected',
+      perfectPearls: 'Perfect! You found every pearl!',
+      locked: 'Locked',
+      clearToUnlock: 'Clear the reef before it!',
+      best: 'Best',
+      backToTitle: 'Title',
+      levelHint1: 'Learn to swim, meet friends, beat the Giant Octopus!',
+      levelHint2: 'Kelp, barrels and treasure chests – shoot them open!',
+      levelHint3: "It's dark down here… Moni is waiting.",
+
+      /* ---- Mini-bosses ---- */
+      octoName: 'Giant Octopus',
+      octoHP: 'OCTOPUS',
+      kingCrabName: 'King Crab',
+      kingCrabHP: 'KING CRAB',
+      heroChallengeMini: "Out of my way! I'm coming for Moni!",
+      octoTaunt: 'Nobody swims past MY reef! Glub glub!',
+      octoDefeat: 'Blub… too many bubbles… you win, little diver!',
+      kingCrabTaunt: 'This treasure is MINE! Snip snap!',
+      kingCrabDefeat: 'Ouch, my claws! Fine… take the pearls…',
+      heroMiniWin: 'Onward! Moni is waiting deeper down!',
     },
 
     ja: {
@@ -297,6 +328,37 @@
       moniDefeat: 'やられた…！わたしの やみのまほうが…きえていく…',
       moniApology: 'ごめん…わたし、ともだちが ほしかっただけなの…',
       heroVictory: 'それなら いっしょに およごう、モニ。うみは みんなのものだよ！',
+
+      /* ---- レベル / すすみぐあい ---- */
+      level1Name: 'サンゴのうみ',
+      level2Name: 'しずんだふね',
+      level3Name: 'ふかいうみのそこ',
+      chooseReef: 'うみを えらぼう',
+      levelSelect: 'レベルをえらぶ',
+      levelClear: 'レベルクリア！',
+      nextLevel: 'つぎのレベル',
+      pearls: 'しんじゅ',
+      pearlsCollected: 'あつめた しんじゅ',
+      perfectPearls: 'パーフェクト！しんじゅを ぜんぶ みつけたよ！',
+      locked: 'まだ あけられないよ',
+      clearToUnlock: 'まえのうみを クリアしよう！',
+      best: 'ベスト',
+      backToTitle: 'タイトルへ',
+      levelHint1: 'およぎかたを おぼえて、おおダコを やっつけよう！',
+      levelHint2: 'こんぶ、たる、たからばこ。あわで あけてみよう！',
+      levelHint3: 'ここは まっくら… モニが まっているよ。',
+
+      /* ---- ミニボス ---- */
+      octoName: 'おおダコ',
+      octoHP: 'おおダコ',
+      kingCrabName: 'カニキング',
+      kingCrabHP: 'カニキング',
+      heroChallengeMini: 'どいて！モニの ところへ いくんだから！',
+      octoTaunt: 'わたしの サンゴは とおさないぞ！ゴボゴボ！',
+      octoDefeat: 'ゴボ…あわが おおすぎる…きみの かちだ…',
+      kingCrabTaunt: 'このたからは オレのもの！チョキチョキ！',
+      kingCrabDefeat: 'いたっ、ハサミが！しかたない…しんじゅは あげるよ…',
+      heroMiniWin: 'つぎへ すすもう！モニが もっと ふかくで まってる！',
     }
   };
 

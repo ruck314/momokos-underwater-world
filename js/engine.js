@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v1.15.0';
+  Game.VERSION = 'v2.0.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -42,9 +42,68 @@
     GAME_OVER: 'gameOver',
     VICTORY: 'victory',
     BEACH: 'beach',
+    LEVEL_CLEAR: 'levelClear',
+    LEVEL_SELECT: 'levelSelect',
   };
   var state = State.TITLE;
   var prevState = null;
+
+  /* ---- Progression ----
+     Which reef is being played, how many pearls have been picked up in
+     it, and the saved record of unlocked levels / best results. Saved to
+     localStorage so a returning player keeps their stars. */
+  var currentLevel = 0;
+  var pearlsCollected = 0;
+  var pearlTotal = 0;
+  var PROGRESS_KEY = 'momoko-uw-progress';
+  var progress = { unlocked: 1, best: {} };
+  Game.progress = progress;
+  /* Frames left before the level-clear screen appears after a mini-boss
+     goes down (gives the defeat dialogue time to play). */
+  var levelClearCountdown = 0;
+  /* Summary shown on the LEVEL_CLEAR screen */
+  var lastClear = null;
+
+  function loadProgress() {
+    try {
+      var raw = window.localStorage.getItem(PROGRESS_KEY);
+      if (raw) {
+        var p = JSON.parse(raw);
+        if (p && typeof p.unlocked === 'number') {
+          progress.unlocked = Math.max(1, Math.min(p.unlocked, Game.levels.count()));
+          progress.best = p.best || {};
+        }
+      }
+    } catch (e) { /* private mode / storage blocked: play without saving */ }
+  }
+
+  function saveProgress() {
+    try {
+      window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+    } catch (e) { /* ignore */ }
+  }
+
+  /* Clearing a reef always earns one star; half the pearls earns two and
+     every pearl earns three. */
+  function starsFor(got, total) {
+    if (total <= 0 || got >= total) return 3;
+    if (got >= total * 0.5) return 2;
+    return 1;
+  }
+
+  function recordLevelClear(index, got, total) {
+    var stars = starsFor(got, total);
+    var prev = progress.best[index];
+    var isNew = !prev || stars > prev.stars || got > prev.pearls;
+    progress.best[index] = {
+      stars: Math.max(stars, prev ? prev.stars : 0),
+      pearls: Math.max(got, prev ? prev.pearls : 0),
+      total: total,
+    };
+    progress.unlocked = Math.max(progress.unlocked, Math.min(index + 2, Game.levels.count()));
+    saveProgress();
+    return { level: index, pearls: got, total: total, stars: stars, isNew: isNew, hasNext: index + 1 < Game.levels.count() };
+  }
 
   /* ---- Customization defaults ----
      Split across two concerns: tintable colors (hair/suit/skin/flipper) and
@@ -72,6 +131,7 @@
   var enemies = [];
   var npcs = []; /* { entity, type } */
   var pickups = [];
+  var chests = [];
   var particles = [];
   var ambientBubbles = [];
   var boss = null;
@@ -206,6 +266,12 @@
         enemies.push(new Game.entities.Fish(e.x, e.y, e.pattern, e.dir, e.species));
       } else if (e.type === 'octopus') {
         enemies.push(new Game.entities.Octopus(e.x, e.y));
+      } else if (e.type === 'jellyfish') {
+        enemies.push(new Game.entities.Jellyfish(e.x, e.y, !!level.dark));
+      } else if (e.type === 'eel') {
+        enemies.push(new Game.entities.Eel(e.x, e.y, e.dir));
+      } else if (e.type === 'shark') {
+        enemies.push(new Game.entities.Shark(e.x, e.y, e.dir, e.range));
       }
     }
 
@@ -222,19 +288,39 @@
       if (npcEntity) npcs.push({ entity: npcEntity, type: nd.type });
     }
 
-    /* Pickups */
+    /* Pickups – hearts and pearls; chests hold more pearls */
     pickups = [];
+    pearlsCollected = 0;
+    pearlTotal = 0;
     for (var p = 0; p < level.spawns.pickups.length; p++) {
       var pd = level.spawns.pickups[p];
-      pickups.push(new Game.entities.HeartPickup(pd.x, pd.y));
+      if (pd.type === 'pearl') {
+        pickups.push(new Game.entities.Pearl(pd.x, pd.y, { shell: pd.shell }));
+        pearlTotal++;
+      } else {
+        pickups.push(new Game.entities.HeartPickup(pd.x, pd.y));
+      }
+    }
+    chests = [];
+    var cl = level.spawns.chests || [];
+    for (var ch = 0; ch < cl.length; ch++) {
+      chests.push(new Game.entities.Chest(cl[ch].x, cl[ch].y, cl[ch].pearls));
+      pearlTotal += cl[ch].pearls || 4;
     }
 
-    /* Boss */
+    /* Boss – Moni in her lair, a mini-boss guarding the other reefs */
     var bd = level.spawns.boss;
-    boss = new Game.entities.Moni(bd.x, bd.y);
+    if (!bd.type || bd.type === 'moni') {
+      boss = new Game.entities.Moni(bd.x, bd.y);
+    } else {
+      boss = new Game.entities.MiniBoss(bd.x, bd.y, bd.type);
+      boss.floorY = level.floorY;
+    }
     bossActivated = false;
+    levelClearCountdown = 0;
 
     /* Wolfe */
+    wolfe = null;
     if (level.wolfe) {
       wolfe = new Game.entities.Wolfe(level.wolfe.x, level.wolfe.y, level.wolfe.patrolWidth);
     }
@@ -242,6 +328,10 @@
     /* Bubbles & particles */
     bubbles = [];
     particles = [];
+
+    /* Rock layouts are per level (palette differs), so drop the cache */
+    reefCache = {};
+    activeRockPalettes = ROCK_PALETTE_SETS[level.rockPalette] || ROCK_PALETTE_SETS.reef;
 
     initBgLayers();
     initAmbientBubbles();
@@ -300,6 +390,12 @@
 
         /* Player */
         player.update(keys, level);
+        /* Trench levels have a rock ceiling instead of a surface */
+        if (level.ceilingY !== undefined && player.y < level.ceilingY) {
+          player.y = level.ceilingY;
+          if (player.vy < 0) player.vy = 0;
+        }
+        var pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
 
         /* Shoot */
         if (keys.action && player.shootCooldown <= 0) {
@@ -313,9 +409,12 @@
           if (!bubbles[bi].active) bubbles.splice(bi, 1);
         }
 
-        /* Enemies */
+        /* Enemies (eels and sharks react to where Momoko is) */
         for (var ei = 0; ei < enemies.length; ei++) {
-          enemies[ei].update();
+          enemies[ei].update(pcx, pcy);
+        }
+        for (var ci = 0; ci < chests.length; ci++) {
+          chests[ci].update();
         }
 
         /* NPCs */
@@ -351,20 +450,25 @@
             Game.audio.startMusic('boss');
           }
 
-          /* Pre-fight: hero challenges first, then Moni snarls back */
+          /* Pre-fight: hero challenges first, then the boss snarls back */
           if (!boss.hasChallenged && boss.timer > 20) {
             boss.hasChallenged = true;
             boss.hasTaunted = true;
-            boss.dialogueQueue.push({ speaker: 'Momoko', text: Game.i18n.t('heroChallenge'), duration: 260 });
-            boss.dialogueQueue.push({ speaker: 'Moni',   text: Game.i18n.t('moniTaunt1'),    duration: 260 });
+            if (boss.isMini) {
+              boss.dialogueQueue.push({ speaker: 'Momoko', text: Game.i18n.t('heroChallengeMini'), duration: 220 });
+              boss.dialogueQueue.push({ speaker: Game.i18n.t(boss.nameKey), text: Game.i18n.t(boss.tauntKey), duration: 240 });
+            } else {
+              boss.dialogueQueue.push({ speaker: 'Momoko', text: Game.i18n.t('heroChallenge'), duration: 260 });
+              boss.dialogueQueue.push({ speaker: 'Moni',   text: Game.i18n.t('moniTaunt1'),    duration: 260 });
+            }
           }
           /* Mid-fight taunt at ~75% HP */
-          if (!boss.hasTaunted3 && !boss.defeated && boss.hp <= boss.maxHp * 0.75) {
+          if (!boss.isMini && !boss.hasTaunted3 && !boss.defeated && boss.hp <= boss.maxHp * 0.75) {
             boss.hasTaunted3 = true;
             boss.dialogueQueue.push({ speaker: 'Moni', text: Game.i18n.t('moniTaunt3'), duration: 240 });
           }
           /* Phase 2 taunt */
-          if (boss.phase === 2 && !boss.hasTaunted2) {
+          if (!boss.isMini && boss.phase === 2 && !boss.hasTaunted2) {
             boss.hasTaunted2 = true;
             boss.dialogueQueue.push({ speaker: 'Moni', text: Game.i18n.t('moniTaunt2'), duration: 260 });
           }
@@ -384,6 +488,12 @@
         if (boss && !bossActivated && player.x > level.bossAreaX) {
           boss.activate();
           bossActivated = true;
+        }
+
+        /* Mini-boss down: once the exchange has played, clear the reef */
+        if (levelClearCountdown > 0) {
+          levelClearCountdown--;
+          if (levelClearCountdown === 0) finishLevel();
         }
 
         /* ---- Collisions ---- */
@@ -407,6 +517,22 @@
               break;
             }
           }
+          /* vs treasure chests – pop the lid and scatter pearls */
+          if (bub.active) {
+            for (var cj = 0; cj < chests.length; cj++) {
+              var chest = chests[cj];
+              if (chest.open) continue;
+              if (circleRect(bub.x, bub.y, bub.r, chest.x, chest.y, chest.w, chest.h)) {
+                bub.active = false;
+                var popped = chest.hit();
+                if (popped) pickups = pickups.concat(popped);
+                particles = particles.concat(
+                  Game.entities.spawnBurst(chest.x + chest.w / 2, chest.y + 6, 12, ['#ffd24a', '#fff1b3', '#ffb0d0', '#ffffff'])
+                );
+                break;
+              }
+            }
+          }
           /* vs boss */
           if (bub.active && boss && boss.active && !boss.defeated) {
             if (circleRect(bub.x, bub.y, bub.r, boss.x, boss.y, boss.w, boss.h)) {
@@ -421,23 +547,37 @@
                 particles = particles.concat(
                   Game.entities.spawnBurst(boss.x + boss.w / 2, boss.y + boss.h / 2, 25, vColors)
                 );
-                /* Post-defeat exchange: Moni's cry → apology → hero's reply */
-                boss.dialogueQueue = [
-                  { speaker: 'Moni',   text: Game.i18n.t('moniDefeat'),  duration: 280 },
-                  { speaker: 'Moni',   text: Game.i18n.t('moniApology'), duration: 320 },
-                  { speaker: 'Momoko', text: Game.i18n.t('heroVictory'), duration: 320 },
-                ];
-                boss.talkTimer = 0;
-                boss.talkText = '';
-                /* Delay victory screen until all defeat dialogue has played
-                   (120+140+140 frames ≈ 6.7s at 60fps). */
-                setTimeout(function () {
-                  if (state === State.PLAYING) {
-                    state = State.VICTORY;
-                    Game.audio.stopMusic();
-                    Game.audio.play('victory');
-                  }
-                }, 7000);
+                if (boss.isMini) {
+                  /* Guardian beaten: its last words, Momoko's rally, then
+                     the level-clear card. */
+                  boss.dialogueQueue = [
+                    { speaker: Game.i18n.t(boss.nameKey), text: Game.i18n.t(boss.defeatKey), duration: 220 },
+                    { speaker: 'Momoko', text: Game.i18n.t('heroMiniWin'), duration: 220 },
+                  ];
+                  boss.talkTimer = 0;
+                  boss.talkText = '';
+                  levelClearCountdown = 300;
+                } else {
+                  /* Post-defeat exchange: Moni's cry → apology → hero's reply */
+                  boss.dialogueQueue = [
+                    { speaker: 'Moni',   text: Game.i18n.t('moniDefeat'),  duration: 280 },
+                    { speaker: 'Moni',   text: Game.i18n.t('moniApology'), duration: 320 },
+                    { speaker: 'Momoko', text: Game.i18n.t('heroVictory'), duration: 320 },
+                  ];
+                  boss.talkTimer = 0;
+                  boss.talkText = '';
+                  /* Delay victory screen until all defeat dialogue has played
+                     (120+140+140 frames ≈ 6.7s at 60fps). */
+                  var clearedLevel = currentLevel;
+                  setTimeout(function () {
+                    if (state === State.PLAYING && currentLevel === clearedLevel) {
+                      lastClear = recordLevelClear(currentLevel, pearlsCollected, pearlTotal);
+                      state = State.VICTORY;
+                      Game.audio.stopMusic();
+                      Game.audio.play('victory');
+                    }
+                  }, 7000);
+                }
               }
             }
           }
@@ -494,7 +634,14 @@
           var pick = pickups[pk];
           if (!pick.active) continue;
           if (aabb(player, pick)) {
-            if (player.heal()) {
+            if (pick.isPearl) {
+              pick.active = false;
+              pearlsCollected++;
+              Game.audio.play('pearl');
+              particles = particles.concat(
+                Game.entities.spawnBurst(pick.x + 7, pick.y + 7, 6, ['#ffffff', '#ffe0f0', '#bff4ff'])
+              );
+            } else if (player.heal()) {
               pick.active = false;
               var hColors = ['#ff4466', '#ff88aa', '#ffccdd'];
               particles = particles.concat(
@@ -561,11 +708,25 @@
         /* Particles still update for fireworks */
         break;
 
+      case State.LEVEL_CLEAR:
+      case State.LEVEL_SELECT:
+        /* Animated by ui.js */
+        break;
+
       case State.BEACH:
         if (wolfe) wolfe.update();
         if (Game.ui.updateBeach) Game.ui.updateBeach(keys, jp);
         break;
     }
+  }
+
+  /* Mini-boss defeated: save the result and show the level-clear card */
+  function finishLevel() {
+    lastClear = recordLevelClear(currentLevel, pearlsCollected, pearlTotal);
+    Game.audio.stopMusic();
+    Game.audio.play('levelClear');
+    if (Game.ui.resetLevelClear) Game.ui.resetLevelClear();
+    state = State.LEVEL_CLEAR;
   }
 
   /* ---- Render ---- */
@@ -594,7 +755,8 @@
        frame. Gameplay keeps the bezel so the D-pad has a quiet backdrop. */
     var fullBleed = Game.input.isTouch() && (
       state === State.TITLE || state === State.CUSTOMIZE ||
-      state === State.INTRO || state === State.VICTORY);
+      state === State.INTRO || state === State.VICTORY ||
+      state === State.LEVEL_CLEAR || state === State.LEVEL_SELECT);
     /* Pause and game-over dim the whole screen, bezel included, so the
        menu floats over the frozen game instead of a bright island. */
     var dimAll = Game.input.isTouch() && (
@@ -634,7 +796,7 @@
 
       case State.PLAYING:
         renderGame();
-        Game.ui.drawHUD(ctx, player);
+        Game.ui.drawHUD(ctx, player, pearlsCollected, pearlTotal);
         if (boss && boss.active) boss.drawHealthBar(ctx);
         /* Dialogue is deferred to canvas-space after the restore so it
            can live in the bottom bezel instead of covering gameplay. */
@@ -673,6 +835,14 @@
 
       case State.VICTORY:
         Game.ui.drawVictory(ctx);
+        break;
+
+      case State.LEVEL_CLEAR:
+        Game.ui.drawLevelClear(ctx, lastClear);
+        break;
+
+      case State.LEVEL_SELECT:
+        Game.ui.drawLevelSelect(ctx);
         break;
 
       case State.BEACH:
@@ -739,7 +909,9 @@
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    /* Light rays – brightest just under the surface, fading with depth */
+    /* Light rays – brightest just under the surface, fading with depth.
+       No sunlight reaches the trench. */
+    if (!level.dark) {
     ctx.save();
     var rayGrad = ctx.createLinearGradient(0, 0, 0, H);
     rayGrad.addColorStop(0, 'rgba(150, 215, 255, 0.09)');
@@ -757,6 +929,7 @@
       ctx.fill();
     }
     ctx.restore();
+    }
 
     /* Parallax background layers – organic blob shapes */
     for (var li = 0; li < bgLayers.length; li++) {
@@ -834,15 +1007,17 @@
       var px = pf.x - camera.x;
       var py = pf.y - camera.y;
       if (px + pf.w < 0 || px > W) continue;
-      drawRockPlatform(ctx, px, py, pf.w, pf.h, pf.x, pf.y + pf.h >= level.floorY - 2, nowT);
+      if (pf.kind === 'wood') drawWoodPlatform(ctx, px, py, pf.w, pf.h, pf.x);
+      else drawRockPlatform(ctx, px, py, pf.w, pf.h, pf.x, pf.y + pf.h >= level.floorY - 2, nowT);
     }
 
     /* Ocean floor – undulating sand, lit from above and darkening with depth */
+    var sandPal = level.sand || { top: '#8a7656', mid: '#5e4e39', bottom: '#2e261d', lip: 'rgba(214, 196, 150, 0.55)' };
     var floorBase = level.floorY - camera.y;
     var sandGrad = ctx.createLinearGradient(0, floorBase - 8, 0, H);
-    sandGrad.addColorStop(0, '#8a7656');
-    sandGrad.addColorStop(0.35, '#5e4e39');
-    sandGrad.addColorStop(1, '#2e261d');
+    sandGrad.addColorStop(0, sandPal.top);
+    sandGrad.addColorStop(0.35, sandPal.mid);
+    sandGrad.addColorStop(1, sandPal.bottom);
     ctx.fillStyle = sandGrad;
     ctx.beginPath();
     ctx.moveTo(0, H + 10);
@@ -858,7 +1033,7 @@
     ctx.save();
     ctx.lineCap = 'round';
     for (var rl = 0; rl < 3; rl++) {
-      ctx.strokeStyle = rl === 0 ? 'rgba(214, 196, 150, 0.55)' : 'rgba(180, 160, 120, 0.18)';
+      ctx.strokeStyle = rl === 0 ? sandPal.lip : 'rgba(180, 160, 120, 0.18)';
       ctx.lineWidth = rl === 0 ? 1.5 : 1;
       ctx.beginPath();
       for (var sx = 0; sx <= W; sx += 4) {
@@ -905,6 +1080,7 @@
     /* Caustics – soft rings of focused sunlight drifting over the sand.
        Cells are world-locked on a repeating strip; only their wobble
        is animated. */
+    if (!level.dark) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = 'rgb(255, 244, 200)';
@@ -937,6 +1113,28 @@
       ctx.stroke();
     }
     ctx.restore();
+    }
+
+    /* Rock ceiling over the trench – a jagged dark band world-locked
+       along the top of the view */
+    if (level.ceilingY !== undefined) {
+      var cg = ctx.createLinearGradient(0, 0, 0, 40);
+      cg.addColorStop(0, '#1e2230');
+      cg.addColorStop(1, '#05070c');
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      for (var cxp = 0; cxp <= W; cxp += 6) {
+        var cwx = cxp + camera.x;
+        ctx.lineTo(cxp, level.ceilingY + Math.sin(cwx * 0.05) * 4 + Math.sin(cwx * 0.013) * 7 + Math.abs(Math.sin(cwx * 0.11)) * 9);
+      }
+      ctx.lineTo(W, -10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(140, 160, 200, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
 
     /* Light falloff toward the seabed */
     var depthGrad = ctx.createLinearGradient(0, H * 0.5, 0, H);
@@ -947,6 +1145,7 @@
 
     /* Water surface – two translucent wave bands with a bright crest
        line and twinkling glints, seen from just below */
+    if (level.waterSurface > -50) {
     var surfaceY = level.waterSurface - camera.y;
     var wt = nowT * 0.001;
     var waveA = function (x) { var wx = x + camera.x; return surfaceY + Math.sin(wx * 0.022 + wt * 1.6) * 3 + Math.sin(wx * 0.051 - wt * 2.1) * 1.5; };
@@ -994,6 +1193,14 @@
       ctx.fill();
     }
     ctx.restore();
+    }
+
+    /* Treasure chests sit on the rocks, behind the pickups they release */
+    for (var ck = 0; ck < chests.length; ck++) {
+      if (chests[ck].x - camera.x > -60 && chests[ck].x - camera.x < W + 60) {
+        chests[ck].draw(ctx, camera.x, camera.y);
+      }
+    }
 
     /* Pickups */
     for (var pk = 0; pk < pickups.length; pk++) {
@@ -1049,6 +1256,25 @@
       particles[pa].draw(ctx, camera.x, camera.y);
     }
 
+    /* Trench darkness: everything outside Momoko's lamp falls into
+       shadow, then the things that make their own light are re-lit so
+       they lead the way. */
+    if (level.dark && player) {
+      var lx = player.x + player.w / 2 - camera.x;
+      var ly = player.y + player.h / 2 - camera.y;
+      drawDarkness(lx, ly);
+      /* Warm lamp tint around her */
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      var wg = ctx.createRadialGradient(lx, ly, 4, lx, ly, 110);
+      wg.addColorStop(0, 'rgba(255, 225, 170, 0.16)');
+      wg.addColorStop(1, 'rgba(255, 225, 170, 0)');
+      ctx.fillStyle = wg;
+      ctx.fillRect(lx - 110, ly - 110, 220, 220);
+      ctx.restore();
+      renderGlowPass();
+    }
+
     /* Current drift motes */
     ctx.save();
     for (var mi = 0; mi < currentMotes.length; mi++) {
@@ -1072,6 +1298,136 @@
     ctx.fillRect(0, 0, W, H);
   }
 
+  /* The trench shadow is built on an offscreen layer so more than one
+     hole can be carved out of it: Momoko's lamp, and a dimmer pool of
+     light around the boss so Moni is visible across her lair. */
+  var darkCanvas = null, darkCtx = null;
+  function carveLight(d, x, y, r0, r1, strength) {
+    var g = d.createRadialGradient(x, y, r0, x, y, r1);
+    g.addColorStop(0, 'rgba(0, 0, 0, ' + strength + ')');
+    g.addColorStop(0.4, 'rgba(0, 0, 0, ' + strength * 0.75 + ')');
+    g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    d.fillStyle = g;
+    d.fillRect(x - r1, y - r1, r1 * 2, r1 * 2);
+  }
+  function drawDarkness(lx, ly) {
+    if (!darkCanvas) {
+      darkCanvas = document.createElement('canvas');
+      darkCanvas.width = W;
+      darkCanvas.height = H;
+      darkCtx = darkCanvas.getContext('2d');
+    }
+    var d = darkCtx;
+    d.globalCompositeOperation = 'source-over';
+    d.clearRect(0, 0, W, H);
+    d.fillStyle = 'rgba(2, 6, 16, 0.86)';
+    d.fillRect(0, 0, W, H);
+    d.globalCompositeOperation = 'destination-out';
+    carveLight(d, lx, ly, 30, 300, 1);
+    if (boss && boss.active) {
+      carveLight(d, boss.x - camera.x + boss.w / 2, boss.y - camera.y + boss.h / 2, 40, 230, 0.75);
+    }
+    ctx.drawImage(darkCanvas, 0, 0);
+  }
+
+  /* Additive halos for everything bioluminescent, painted over the
+     darkness so it glows instead of being swallowed. */
+  function glowHalo(c, x, y, r, rgb, a) {
+    var g = c.createRadialGradient(x, y, r * 0.1, x, y, r);
+    g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')');
+    g.addColorStop(1, 'rgba(' + rgb + ',0)');
+    c.fillStyle = g;
+    c.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  var GLOW_RGB = ['63,240,216', '255,111,208', '155,123,255'];
+  function renderGlowPass() {
+    var t = Date.now() * 0.001;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    var i, d, dx, dy;
+    for (i = 0; i < level.decorations.length; i++) {
+      d = level.decorations[i];
+      dx = d.x - camera.x;
+      if (dx < -80 || dx > W + 80) continue;
+      dy = d.y - camera.y;
+      if (d.type === 'glowplant') {
+        var gh = d.variant === 1 ? 62 : d.variant === 2 ? 40 : 46;
+        glowHalo(ctx, dx, dy - gh, 46, GLOW_RGB[(d.variant || 0) % 3], 0.3 + 0.08 * Math.sin(t * 2 + d.x));
+      } else if (d.type === 'vent') {
+        glowHalo(ctx, dx, dy - 56, 34, '255,140,40', 0.3 + 0.12 * Math.sin(t * 7 + d.x));
+      } else if (d.type === 'crystal') {
+        glowHalo(ctx, dx, dy - 20, 40, '120,200,255', 0.3 + 0.06 * Math.sin(t * 1.5 + d.x));
+      }
+    }
+    for (i = 0; i < enemies.length; i++) {
+      var en = enemies[i];
+      if (!en.active || !en.glow) continue;
+      var jg = ctx.createRadialGradient(en.x - camera.x + en.w / 2, en.y - camera.y + 10, 3, en.x - camera.x + en.w / 2, en.y - camera.y + 10, 44);
+      jg.addColorStop(0, 'hsla(' + en.hue + ', 90%, 70%, 0.35)');
+      jg.addColorStop(1, 'hsla(' + en.hue + ', 90%, 70%, 0)');
+      ctx.fillStyle = jg;
+      ctx.fillRect(en.x - camera.x + en.w / 2 - 44, en.y - camera.y - 34, 88, 88);
+    }
+    for (i = 0; i < pickups.length; i++) {
+      var pk = pickups[i];
+      if (!pk.active) continue;
+      var px = pk.x - camera.x + 7, py = pk.y - camera.y + 7;
+      if (px < -20 || px > W + 20) continue;
+      glowHalo(ctx, px, py, pk.isPearl ? 18 : 16, pk.isPearl ? '255,225,245' : '255,120,160', 0.4);
+    }
+    for (i = 0; i < chests.length; i++) {
+      if (chests[i].open) continue;
+      glowHalo(ctx, chests[i].x - camera.x + 18, chests[i].y - camera.y + 14, 30, '255,210,110', 0.28);
+    }
+    if (boss && boss.active && !boss.defeated) {
+      glowHalo(ctx, boss.x - camera.x + boss.w / 2, boss.y - camera.y + boss.h * 0.45, 130, '200,60,180', 0.3);
+    }
+    ctx.restore();
+  }
+
+  /* Ship timber used for the wreck's deck and hull platforms: planks with
+     seams, nails, a sunlit top edge and patches of green weed. */
+  function drawWoodPlatform(c, px, py, pw, ph, seed) {
+    var horiz = pw >= ph;
+    c.save();
+    var g = c.createLinearGradient(0, py, 0, py + ph);
+    g.addColorStop(0, '#9a6a3c');
+    g.addColorStop(1, '#4a2e16');
+    c.fillStyle = g;
+    c.fillRect(px, py, pw, ph);
+    /* Plank seams */
+    c.strokeStyle = 'rgba(40, 20, 8, 0.55)';
+    c.lineWidth = 1;
+    var k;
+    if (horiz) {
+      for (k = 12; k < ph; k += 12) { c.beginPath(); c.moveTo(px, py + k + 0.5); c.lineTo(px + pw, py + k + 0.5); c.stroke(); }
+      for (k = 40 + (seed % 30); k < pw; k += 70) { c.beginPath(); c.moveTo(px + k + 0.5, py); c.lineTo(px + k + 0.5, py + Math.min(ph, 12)); c.stroke(); }
+    } else {
+      for (k = 11; k < pw; k += 11) { c.beginPath(); c.moveTo(px + k + 0.5, py); c.lineTo(px + k + 0.5, py + ph); c.stroke(); }
+    }
+    /* Nail heads */
+    c.fillStyle = '#2a1a0c';
+    for (k = 8; k < (horiz ? pw : ph); k += 34) {
+      if (horiz) { c.fillRect(px + k, py + 3, 2, 2); c.fillRect(px + k + 1, py + ph - 5, 2, 2); }
+      else { c.fillRect(px + 3, py + k, 2, 2); c.fillRect(px + pw - 5, py + k, 2, 2); }
+    }
+    /* Weed and slime patches (deterministic) */
+    for (k = 0; k < 4; k++) {
+      var h = ((seed + k * 977) * 7919) & 1023;
+      c.fillStyle = k % 2 ? 'rgba(60, 140, 90, 0.35)' : 'rgba(90, 160, 60, 0.3)';
+      c.beginPath();
+      c.ellipse(px + (h % Math.max(1, pw)), py + ((h >> 4) % Math.max(1, ph)), 6 + (h % 9), 3 + ((h >> 6) % 3), 0.3, 0, Math.PI * 2);
+      c.fill();
+    }
+    /* Lit top edge, dark outline */
+    c.fillStyle = 'rgba(255, 210, 150, 0.45)';
+    c.fillRect(px, py, pw, 2);
+    c.strokeStyle = 'rgba(30, 14, 4, 0.7)';
+    c.lineWidth = 1;
+    c.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+    c.restore();
+  }
+
   /* Reef rock palettes – warm / pastel coral-encrusted stone. `patch` are
      the crust colours dabbed over the body, `grow` the colours used for
      the fans, tubes and anemones on top. */
@@ -1081,6 +1437,13 @@
     { light: '#dbbaff', mid: '#9f7ad8', dark: '#43306e', rim: '#f3e6ff', patch: ['#ffb0d0', '#ffe08a', '#8fe3cf'], grow: ['#ff9ec8', '#ffd24a', '#7ee2c0'] },
     { light: '#a9eedb', mid: '#5db6a6', dark: '#24525f', rim: '#e2fff5', patch: ['#ffb3c8', '#ffd27a', '#d0b0ff'], grow: ['#ff6f91', '#ffa94d', '#c77dff'] },
   ];
+  /* Cold basalt for the trench, crusted with bioluminescent lichen */
+  var TRENCH_PALETTES = [
+    { light: '#5a6578', mid: '#3a4254', dark: '#141822', rim: '#8fa0b8', patch: ['#3ff0d8', '#c070ff', '#60a0ff'], grow: ['#3ff0d8', '#ff6fd0', '#9b7bff'] },
+    { light: '#4e5a6a', mid: '#2f3746', dark: '#10131c', rim: '#7f90a8', patch: ['#56e0c0', '#ff80d0', '#7090ff'], grow: ['#56e0c0', '#ffa0e0', '#80a0ff'] },
+  ];
+  var ROCK_PALETTE_SETS = { reef: REEF_PALETTES, trench: TRENCH_PALETTES };
+  var activeRockPalettes = REEF_PALETTES;
 
   /* Seeded layouts for each platform, built once on first draw so the
      reef never flickers and no Math.random() runs per frame. Keyed by the
@@ -1094,7 +1457,7 @@
       var v = Math.sin((seed + n * 12.9898) * 78.233) * 43758.5453;
       return v - Math.floor(v);
     }
-    var L = { pal: REEF_PALETTES[Math.floor(rand() * REEF_PALETTES.length)], pts: [], topN: 0, patches: [], dots: [], barnacles: [], grow: [] };
+    var L = { pal: activeRockPalettes[Math.floor(rand() * activeRockPalettes.length)], pts: [], topN: 0, patches: [], dots: [], barnacles: [], grow: [] };
     var r = Math.min(16, pw * 0.35, ph * 0.45);
     var amp = Math.min(6, Math.min(pw, ph) * 0.12);
 
@@ -1545,72 +1908,576 @@
 
   function renderDecorations() {
     if (!level) return;
+    var t = Date.now() * 0.001;
     for (var i = 0; i < level.decorations.length; i++) {
       var d = level.decorations[i];
       var dx = d.x - camera.x;
-      if (dx < -100 || dx > W + 100) continue;
-      var dy = d.y - camera.y;
+      var reach = d.type === 'wreck' ? (d.w || 300) + 100 : 160;
+      if (dx < -reach || dx > W + reach) continue;
+      drawDecorationAt(ctx, d, dx, d.y - camera.y, t);
+    }
+  }
 
-      if (d.type === 'seaweed') {
-        var sway = Math.sin(Date.now() * 0.001 + d.x * 0.01) * 8;
-        ctx.fillStyle = '#1a6633';
-        ctx.beginPath();
-        ctx.moveTo(dx, dy);
-        ctx.quadraticCurveTo(dx + sway, dy - d.h * 0.5, dx + 3, dy - d.h);
-        ctx.quadraticCurveTo(dx + sway + 6, dy - d.h * 0.5, dx + 8, dy);
-        ctx.closePath();
-        ctx.fill();
-        /* Second frond */
-        ctx.fillStyle = '#228844';
-        ctx.beginPath();
-        ctx.moveTo(dx + 4, dy);
-        ctx.quadraticCurveTo(dx + 4 - sway * 0.7, dy - d.h * 0.4, dx + 6, dy - d.h * 0.8);
-        ctx.quadraticCurveTo(dx + 10 - sway * 0.7, dy - d.h * 0.3, dx + 10, dy);
-        ctx.closePath();
-        ctx.fill();
-      } else if (d.type === 'coral') {
-        drawCoral(ctx, dx, dy, d.variant || 0, d.x);
-      } else if (d.type === 'shell') {
-        ctx.fillStyle = '#ffddaa';
-        ctx.beginPath();
-        ctx.arc(dx, dy, 6, Math.PI, 0);
-        ctx.fill();
-        ctx.strokeStyle = '#ccaa77';
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(dx - 4, dy); ctx.lineTo(dx, dy - 5);
-        ctx.moveTo(dx, dy); ctx.lineTo(dx, dy - 6);
-        ctx.moveTo(dx + 4, dy); ctx.lineTo(dx, dy - 5);
-        ctx.stroke();
-      } else if (d.type === 'kelp') {
-        var kTime = Date.now() * 0.001;
-        var kh = d.h || 120;
-        /* Main stalk */
-        var kSway = Math.sin(kTime + d.x * 0.005) * 12;
-        ctx.strokeStyle = '#1a6633';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(dx, dy);
-        ctx.bezierCurveTo(dx + kSway * 0.3, dy - kh * 0.33, dx + kSway * 0.7, dy - kh * 0.66, dx + kSway, dy - kh);
-        ctx.stroke();
-        /* Leaf blades */
-        var leafColors = ['#228844', '#1a7738', '#20994a'];
-        for (var lf = 0; lf < 5; lf++) {
-          var lt = (lf + 1) / 6;
-          var lx = dx + kSway * lt;
-          var ly = dy - kh * lt;
-          var leafSway = Math.sin(kTime * 1.2 + lf * 1.5 + d.x * 0.01) * 8;
-          var leafDir = lf % 2 === 0 ? 1 : -1;
-          ctx.fillStyle = leafColors[lf % leafColors.length];
-          ctx.beginPath();
-          ctx.moveTo(lx, ly);
-          ctx.quadraticCurveTo(lx + leafDir * (12 + leafSway), ly - 6, lx + leafDir * (18 + leafSway), ly - 2);
-          ctx.quadraticCurveTo(lx + leafDir * (12 + leafSway), ly + 2, lx, ly);
-          ctx.closePath();
-          ctx.fill();
-        }
+  /* Paints one decoration with its anchor at screen (dx, dy). `t` is time
+     in seconds for the sway animations. Also used by the level-select
+     thumbnails, hence the explicit context. */
+  function drawDecorationAt(c, d, dx, dy, t) {
+    if (d.type === 'seaweed') {
+      var sway = Math.sin(t + d.x * 0.01) * 8;
+      c.fillStyle = '#1a6633';
+      c.beginPath();
+      c.moveTo(dx, dy);
+      c.quadraticCurveTo(dx + sway, dy - d.h * 0.5, dx + 3, dy - d.h);
+      c.quadraticCurveTo(dx + sway + 6, dy - d.h * 0.5, dx + 8, dy);
+      c.closePath();
+      c.fill();
+      /* Second frond */
+      c.fillStyle = '#228844';
+      c.beginPath();
+      c.moveTo(dx + 4, dy);
+      c.quadraticCurveTo(dx + 4 - sway * 0.7, dy - d.h * 0.4, dx + 6, dy - d.h * 0.8);
+      c.quadraticCurveTo(dx + 10 - sway * 0.7, dy - d.h * 0.3, dx + 10, dy);
+      c.closePath();
+      c.fill();
+    } else if (d.type === 'coral') {
+      drawCoral(c, dx, dy, d.variant || 0, d.x);
+    } else if (d.type === 'shell') {
+      c.fillStyle = '#ffddaa';
+      c.beginPath();
+      c.arc(dx, dy, 6, Math.PI, 0);
+      c.fill();
+      c.strokeStyle = '#ccaa77';
+      c.lineWidth = 0.5;
+      c.beginPath();
+      c.moveTo(dx - 4, dy); c.lineTo(dx, dy - 5);
+      c.moveTo(dx, dy); c.lineTo(dx, dy - 6);
+      c.moveTo(dx + 4, dy); c.lineTo(dx, dy - 5);
+      c.stroke();
+    } else if (d.type === 'kelp' || d.type === 'tallkelp') {
+      drawKelp(c, dx, dy, d, t, d.type === 'tallkelp');
+    } else if (d.type === 'wreck') {
+      drawWreck(c, dx, dy, d.w || 600, d.h || 220, !!d.stern, d.x);
+    } else if (d.type === 'mast') {
+      drawMast(c, dx, dy, d.h || 230, t);
+    } else if (d.type === 'anchor') {
+      drawAnchor(c, dx, dy);
+    } else if (d.type === 'barrel') {
+      drawBarrel(c, dx, dy, !!d.lying);
+    } else if (d.type === 'glowplant') {
+      drawGlowPlant(c, dx, dy, d.variant || 0, t, d.x);
+    } else if (d.type === 'vent') {
+      drawVent(c, dx, dy, t, d.x);
+    } else if (d.type === 'crystal') {
+      drawCrystal(c, dx, dy, d.x);
+    }
+  }
+
+  /* Kelp stalk with alternating blades; the tall forest variant is
+     thicker, bluer and carries little gas bladders at each blade. */
+  function drawKelp(c, dx, dy, d, t, tall) {
+    var kh = d.h || 120;
+    var kSway = Math.sin(t + d.x * 0.005) * (tall ? 18 : 12);
+    c.strokeStyle = tall ? '#1d5c45' : '#1a6633';
+    c.lineWidth = tall ? 5 : 4;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(dx, dy);
+    c.bezierCurveTo(dx + kSway * 0.3, dy - kh * 0.33, dx + kSway * 0.7, dy - kh * 0.66, dx + kSway, dy - kh);
+    c.stroke();
+    if (tall) {
+      c.strokeStyle = 'rgba(120, 220, 160, 0.35)';
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(dx - 1, dy);
+      c.bezierCurveTo(dx + kSway * 0.3 - 1, dy - kh * 0.33, dx + kSway * 0.7 - 1, dy - kh * 0.66, dx + kSway - 1, dy - kh);
+      c.stroke();
+    }
+    var leafColors = tall ? ['#2a8a5a', '#1f7a50', '#36a06a'] : ['#228844', '#1a7738', '#20994a'];
+    var n = tall ? 7 : 5;
+    for (var lf = 0; lf < n; lf++) {
+      var lt = (lf + 1) / (n + 1);
+      var lx = dx + kSway * lt;
+      var ly = dy - kh * lt;
+      var leafSway = Math.sin(t * 1.2 + lf * 1.5 + d.x * 0.01) * 8;
+      var leafDir = lf % 2 === 0 ? 1 : -1;
+      var L = tall ? 26 : 18;
+      var lg = c.createLinearGradient(lx, ly, lx + leafDir * L, ly);
+      lg.addColorStop(0, leafColors[lf % leafColors.length]);
+      lg.addColorStop(1, tall ? '#7fe0a8' : '#5fcf8a');
+      c.fillStyle = lg;
+      c.beginPath();
+      c.moveTo(lx, ly);
+      c.quadraticCurveTo(lx + leafDir * (L * 0.65 + leafSway), ly - (tall ? 9 : 6), lx + leafDir * (L + leafSway), ly - 2);
+      c.quadraticCurveTo(lx + leafDir * (L * 0.65 + leafSway), ly + 3, lx, ly);
+      c.closePath();
+      c.fill();
+      if (tall) {
+        /* Gas bladder at the blade base */
+        c.fillStyle = '#b8e08a';
+        c.beginPath(); c.ellipse(lx + leafDir * 4, ly - 1, 3.2, 2.4, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = 'rgba(255,255,255,0.5)';
+        c.beginPath(); c.arc(lx + leafDir * 3, ly - 2, 0.9, 0, Math.PI * 2); c.fill();
       }
     }
+  }
+
+  /* Broken hull section seen side-on: planked timber rising from the
+     sand to a splintered top edge, with brass portholes and weed drips.
+     `stern` mirrors the curve so the two pieces read as one ship. */
+  function drawWreck(c, dx, dy, w, h, stern, seed) {
+    c.save();
+    if (stern) { c.translate(dx + w, 0); c.scale(-1, 1); dx = 0; }
+    var top = dy - h;
+    /* Silhouette: curved bow on the left, broken edge across the top */
+    c.beginPath();
+    c.moveTo(dx + w, dy + 6);
+    c.lineTo(dx + 40, dy + 6);
+    c.bezierCurveTo(dx + 10, dy - h * 0.2, dx - 4, dy - h * 0.6, dx + 14, top);
+    var segs = 9;
+    for (var s = 1; s <= segs; s++) {
+      var sx = dx + 14 + (w - 14) * s / segs;
+      var jag = ((seed * 31 + s * 977) % 23) - 11;
+      var rise = s > segs * 0.6 ? (s - segs * 0.6) / (segs * 0.4) * h * 0.45 : 0;
+      c.lineTo(sx, top + jag + rise + (s % 2 ? 8 : 0));
+    }
+    c.closePath();
+    var g = c.createLinearGradient(0, top, 0, dy);
+    g.addColorStop(0, '#5a3c26');
+    g.addColorStop(1, '#2a1a10');
+    c.fillStyle = g;
+    c.fill();
+    c.save();
+    c.clip();
+    /* Plank lines following the hull's curve */
+    c.strokeStyle = 'rgba(20, 10, 4, 0.55)';
+    c.lineWidth = 1.2;
+    for (var py = top + 10; py < dy; py += 14) {
+      c.beginPath();
+      c.moveTo(dx - 10, py);
+      c.quadraticCurveTo(dx + w * 0.5, py + 6, dx + w + 10, py);
+      c.stroke();
+    }
+    c.strokeStyle = 'rgba(255, 200, 140, 0.08)';
+    for (py = top + 4; py < dy; py += 14) {
+      c.beginPath();
+      c.moveTo(dx - 10, py);
+      c.quadraticCurveTo(dx + w * 0.5, py + 6, dx + w + 10, py);
+      c.stroke();
+    }
+    /* Vertical ribs */
+    c.strokeStyle = 'rgba(20, 10, 4, 0.4)';
+    for (var rx = dx + 60; rx < dx + w; rx += 90) {
+      c.beginPath(); c.moveTo(rx, top - 10); c.lineTo(rx + 6, dy + 10); c.stroke();
+    }
+    /* A hole in the hull */
+    var hg = c.createRadialGradient(dx + w * 0.55, dy - h * 0.28, 2, dx + w * 0.55, dy - h * 0.28, 26);
+    hg.addColorStop(0, 'rgba(4, 10, 20, 0.95)');
+    hg.addColorStop(0.7, 'rgba(4, 10, 20, 0.8)');
+    hg.addColorStop(1, 'rgba(4, 10, 20, 0)');
+    c.fillStyle = hg;
+    c.beginPath(); c.ellipse(dx + w * 0.55, dy - h * 0.28, 24, 16, 0.3, 0, Math.PI * 2); c.fill();
+    c.restore();
+    /* Portholes – brass rings around dark glass */
+    for (var p = 0; p < 3; p++) {
+      var pxp = dx + w * (0.22 + p * 0.17), pyp = dy - h * 0.5 - p * 4;
+      c.fillStyle = '#2a1a10';
+      c.beginPath(); c.arc(pxp, pyp, 11, 0, Math.PI * 2); c.fill();
+      var bg = c.createLinearGradient(pxp - 10, pyp - 10, pxp + 10, pyp + 10);
+      bg.addColorStop(0, '#e8c26a');
+      bg.addColorStop(0.5, '#9a7030');
+      bg.addColorStop(1, '#d9b050');
+      c.strokeStyle = bg;
+      c.lineWidth = 3.5;
+      c.beginPath(); c.arc(pxp, pyp, 9, 0, Math.PI * 2); c.stroke();
+      var gg = c.createRadialGradient(pxp - 3, pyp - 3, 1, pxp, pyp, 8);
+      gg.addColorStop(0, '#3a5a70');
+      gg.addColorStop(1, '#0a1620');
+      c.fillStyle = gg;
+      c.beginPath(); c.arc(pxp, pyp, 7, 0, Math.PI * 2); c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.45)';
+      c.beginPath(); c.ellipse(pxp - 2.5, pyp - 3, 2.2, 1.2, -0.7, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#4a3418';
+      for (var b = 0; b < 4; b++) {
+        var ba = b * Math.PI / 2 + 0.4;
+        c.beginPath(); c.arc(pxp + Math.cos(ba) * 9, pyp + Math.sin(ba) * 9, 1, 0, Math.PI * 2); c.fill();
+      }
+    }
+    /* Weed drips over the broken edge */
+    c.strokeStyle = 'rgba(60, 150, 90, 0.7)';
+    c.lineWidth = 2.5;
+    c.lineCap = 'round';
+    for (var wd = 0; wd < 6; wd++) {
+      var wx = dx + 30 + (w - 60) * wd / 5;
+      var wy = top + 6 + ((seed + wd * 131) % 20);
+      c.beginPath();
+      c.moveTo(wx, wy - 4);
+      c.quadraticCurveTo(wx + 3, wy + 10, wx - 1, wy + 18 + (wd % 3) * 6);
+      c.stroke();
+    }
+    /* Edge outline */
+    c.strokeStyle = 'rgba(15, 8, 2, 0.7)';
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.moveTo(dx + 40, dy + 6);
+    c.bezierCurveTo(dx + 10, dy - h * 0.2, dx - 4, dy - h * 0.6, dx + 14, top);
+    c.stroke();
+    c.restore();
+  }
+
+  /* Mast with a yard and a torn, slowly billowing sail */
+  function drawMast(c, dx, dy, h, t) {
+    var top = dy - h;
+    var yardY = top + h * 0.22;
+    var bil = Math.sin(t * 0.8 + dx * 0.001) * 6;
+    c.save();
+    c.lineCap = 'round';
+    /* Rigging */
+    c.strokeStyle = 'rgba(200, 180, 140, 0.45)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(dx, top + 4); c.lineTo(dx - 70, yardY + 2);
+    c.moveTo(dx, top + 4); c.lineTo(dx + 70, yardY + 2);
+    c.moveTo(dx - 70, yardY + 2); c.lineTo(dx - 30, dy);
+    c.moveTo(dx + 70, yardY + 2); c.lineTo(dx + 36, dy);
+    c.stroke();
+    /* Sail – tattered cloth hanging from the yard */
+    var sg = c.createLinearGradient(dx - 60, yardY, dx + 60, yardY + 90);
+    sg.addColorStop(0, '#d8cfb8');
+    sg.addColorStop(1, '#8a826e');
+    c.fillStyle = sg;
+    c.beginPath();
+    c.moveTo(dx - 62, yardY + 3);
+    c.lineTo(dx + 62, yardY + 3);
+    c.quadraticCurveTo(dx + 64 + bil, yardY + 50, dx + 52 + bil, yardY + 96);
+    var rag = [[dx + 40, yardY + 80], [dx + 26, yardY + 104], [dx + 10, yardY + 72], [dx - 6, yardY + 98], [dx - 22, yardY + 84], [dx - 40, yardY + 108], [dx - 54, yardY + 88]];
+    for (var r = 0; r < rag.length; r++) c.lineTo(rag[r][0] + bil * (0.4 + r * 0.08), rag[r][1]);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = 'rgba(70, 60, 40, 0.5)';
+    c.lineWidth = 1;
+    c.stroke();
+    /* Holes and seams in the cloth */
+    c.fillStyle = 'rgba(14, 50, 70, 0.7)';
+    c.beginPath(); c.ellipse(dx + 18 + bil * 0.5, yardY + 40, 7, 5, 0.4, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(dx - 30 + bil * 0.3, yardY + 58, 5, 8, -0.3, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(70, 60, 40, 0.35)';
+    for (var sm = 1; sm < 4; sm++) {
+      c.beginPath(); c.moveTo(dx - 60, yardY + 3 + sm * 22); c.quadraticCurveTo(dx + bil * 0.5, yardY + 8 + sm * 22, dx + 58, yardY + 3 + sm * 22); c.stroke();
+    }
+    /* Yard and mast */
+    c.strokeStyle = '#3a2412';
+    c.lineWidth = 5;
+    c.beginPath(); c.moveTo(dx - 68, yardY + 2); c.lineTo(dx + 68, yardY - 2); c.stroke();
+    var mg = c.createLinearGradient(dx - 4, 0, dx + 4, 0);
+    mg.addColorStop(0, '#2a1a0c');
+    mg.addColorStop(0.5, '#7a5230');
+    mg.addColorStop(1, '#3a2412');
+    c.strokeStyle = mg;
+    c.lineWidth = 8;
+    c.beginPath(); c.moveTo(dx, dy + 4); c.lineTo(dx, top); c.stroke();
+    /* Crow's nest */
+    c.fillStyle = '#4a3018';
+    c.fillRect(dx - 12, top + 10, 24, 10);
+    c.fillStyle = '#6a4828';
+    c.fillRect(dx - 12, top + 10, 24, 3);
+    c.restore();
+  }
+
+  function drawAnchor(c, dx, dy) {
+    c.save();
+    c.translate(dx, dy - 4);
+    c.rotate(-0.22);
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    var iron = c.createLinearGradient(-20, 0, 20, 0);
+    iron.addColorStop(0, '#2c313a');
+    iron.addColorStop(0.5, '#6a7482');
+    iron.addColorStop(1, '#2c313a');
+    /* Arms – a wide crescent with flukes at the tips */
+    c.strokeStyle = iron;
+    c.lineWidth = 6;
+    c.beginPath(); c.arc(0, -22, 24, 0.25, Math.PI - 0.25); c.stroke();
+    c.fillStyle = '#4a525e';
+    c.beginPath(); c.moveTo(-26, -8); c.lineTo(-18, -22); c.lineTo(-30, -20); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(26, -8); c.lineTo(18, -22); c.lineTo(30, -20); c.closePath(); c.fill();
+    /* Shank */
+    c.strokeStyle = iron;
+    c.lineWidth = 6;
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -64); c.stroke();
+    /* Stock (crossbar) and ring */
+    c.lineWidth = 5;
+    c.beginPath(); c.moveTo(-18, -58); c.lineTo(18, -58); c.stroke();
+    c.lineWidth = 3.5;
+    c.beginPath(); c.arc(0, -70, 6, 0, Math.PI * 2); c.stroke();
+    /* Rust and highlights */
+    c.fillStyle = 'rgba(150, 70, 30, 0.55)';
+    c.beginPath(); c.ellipse(-2, -40, 3, 5, 0.3, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(14, -16, 3, 2, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(-10, -58, 2.5, 1.8, 0, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.25)';
+    c.lineWidth = 1.2;
+    c.beginPath(); c.moveTo(-1.5, -8); c.lineTo(-1.5, -52); c.stroke();
+    c.restore();
+    /* Sand it has sunk into */
+    c.fillStyle = 'rgba(138, 118, 86, 0.9)';
+    c.beginPath(); c.ellipse(dx, dy, 22, 5, 0, 0, Math.PI * 2); c.fill();
+  }
+
+  function drawBarrel(c, dx, dy, lying) {
+    c.save();
+    c.fillStyle = 'rgba(4, 14, 26, 0.35)';
+    c.beginPath(); c.ellipse(dx, dy + 1, lying ? 20 : 14, 3.5, 0, 0, Math.PI * 2); c.fill();
+    if (lying) {
+      c.translate(dx, dy - 12);
+      /* Side-on cylinder: staves run horizontally, hoops are vertical */
+      var bg = c.createLinearGradient(0, -12, 0, 12);
+      bg.addColorStop(0, '#b07a44');
+      bg.addColorStop(0.5, '#7a4e26');
+      bg.addColorStop(1, '#3e2612');
+      c.fillStyle = bg;
+      c.beginPath();
+      c.moveTo(-16, -11);
+      c.quadraticCurveTo(0, -14, 16, -11);
+      c.lineTo(16, 11);
+      c.quadraticCurveTo(0, 14, -16, 11);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = 'rgba(40, 20, 8, 0.5)';
+      c.lineWidth = 1;
+      for (var s = -8; s <= 8; s += 4) { c.beginPath(); c.moveTo(-16, s); c.lineTo(16, s); c.stroke(); }
+      c.fillStyle = '#3a3f48';
+      c.fillRect(-10, -12.5, 3, 25);
+      c.fillRect(7, -12.5, 3, 25);
+      c.fillStyle = 'rgba(255,255,255,0.3)';
+      c.fillRect(-9.5, -12, 1, 24);
+      c.fillRect(7.5, -12, 1, 24);
+      /* Visible end */
+      c.fillStyle = '#5a381a';
+      c.beginPath(); c.ellipse(16, 0, 4, 12, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#2a1a0c';
+      c.stroke();
+    } else {
+      c.translate(dx, dy - 16);
+      var vg = c.createLinearGradient(-13, 0, 13, 0);
+      vg.addColorStop(0, '#3e2612');
+      vg.addColorStop(0.35, '#b07a44');
+      vg.addColorStop(0.7, '#7a4e26');
+      vg.addColorStop(1, '#3e2612');
+      c.fillStyle = vg;
+      c.beginPath();
+      c.moveTo(-11, -16);
+      c.quadraticCurveTo(-15, 0, -11, 16);
+      c.lineTo(11, 16);
+      c.quadraticCurveTo(15, 0, 11, -16);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = 'rgba(40, 20, 8, 0.5)';
+      c.lineWidth = 1;
+      for (var v = -7; v <= 7; v += 4.5) {
+        c.beginPath(); c.moveTo(v, -16); c.quadraticCurveTo(v * 1.25, 0, v, 16); c.stroke();
+      }
+      c.fillStyle = '#3a3f48';
+      c.fillRect(-13, -9, 26, 3);
+      c.fillRect(-13, 6, 26, 3);
+      c.fillStyle = 'rgba(255,255,255,0.3)';
+      c.fillRect(-13, -8.5, 26, 1);
+      c.fillRect(-13, 6.5, 26, 1);
+      c.fillStyle = '#5a381a';
+      c.beginPath(); c.ellipse(0, -16, 11, 3.5, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#2a1a0c';
+      c.stroke();
+      c.strokeStyle = 'rgba(40, 20, 8, 0.6)';
+      c.beginPath();
+      c.moveTo(-11, -16); c.quadraticCurveTo(-15, 0, -11, 16);
+      c.moveTo(11, -16); c.quadraticCurveTo(15, 0, 11, 16);
+      c.stroke();
+    }
+    c.restore();
+  }
+
+  /* Bioluminescent plants for the trench. The additive halos are added
+     in renderGlowPass; this paints the plant bodies and their lit tips.
+       0 – tube anemone: a fan of teal tubes with bright bulb tips
+       1 – lantern stalk: tall curving stem with a glowing pink bulb
+       2 – violet fern: three fronds beaded with glowing dots */
+  function drawGlowPlant(c, dx, dy, variant, t, seed) {
+    var sway = Math.sin(t * 1.1 + seed * 0.01) * 3;
+    c.save();
+    c.lineCap = 'round';
+    if (variant === 1) {
+      var h = 60;
+      c.strokeStyle = '#3b2a5e';
+      c.lineWidth = 4;
+      c.beginPath();
+      c.moveTo(dx, dy);
+      c.bezierCurveTo(dx - 6, dy - h * 0.4, dx + 10 + sway, dy - h * 0.7, dx + 2 + sway, dy - h);
+      c.stroke();
+      c.strokeStyle = '#7a5aa8';
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(dx - 1, dy);
+      c.bezierCurveTo(dx - 7, dy - h * 0.4, dx + 9 + sway, dy - h * 0.7, dx + 1 + sway, dy - h);
+      c.stroke();
+      /* Leaves */
+      c.fillStyle = '#4a3a78';
+      c.beginPath(); c.moveTo(dx - 2, dy - 18); c.quadraticCurveTo(dx - 18, dy - 26, dx - 20, dy - 14); c.quadraticCurveTo(dx - 10, dy - 12, dx - 2, dy - 18); c.fill();
+      c.beginPath(); c.moveTo(dx + 3, dy - 32); c.quadraticCurveTo(dx + 18, dy - 40, dx + 22, dy - 28); c.quadraticCurveTo(dx + 12, dy - 26, dx + 3, dy - 32); c.fill();
+      /* Bulb */
+      var bx = dx + 2 + sway, by = dy - h - 4;
+      var bg = c.createRadialGradient(bx - 2, by - 2, 1, bx, by, 9);
+      bg.addColorStop(0, '#ffffff');
+      bg.addColorStop(0.4, '#ff9ee0');
+      bg.addColorStop(1, '#c03a9a');
+      c.fillStyle = bg;
+      c.beginPath(); c.arc(bx, by, 8, 0, Math.PI * 2); c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.7)';
+      c.beginPath(); c.ellipse(bx - 3, by - 3.5, 2.4, 1.4, -0.6, 0, Math.PI * 2); c.fill();
+    } else if (variant === 2) {
+      for (var f = -1; f <= 1; f++) {
+        var fh = 42 - Math.abs(f) * 8;
+        var tipX = dx + f * 16 + sway * (1 + f * 0.3), tipY = dy - fh;
+        c.strokeStyle = '#5a3a9a';
+        c.lineWidth = 3;
+        c.beginPath();
+        c.moveTo(dx, dy);
+        c.quadraticCurveTo(dx + f * 6, dy - fh * 0.6, tipX, tipY);
+        c.stroke();
+        c.strokeStyle = '#9b7bff';
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(dx, dy);
+        c.quadraticCurveTo(dx + f * 6, dy - fh * 0.6, tipX, tipY);
+        c.stroke();
+        for (var k = 1; k <= 4; k++) {
+          var kt = k / 4.5, mt = 1 - kt;
+          var kx = mt * mt * dx + 2 * mt * kt * (dx + f * 6) + kt * kt * tipX;
+          var ky = mt * mt * dy + 2 * mt * kt * (dy - fh * 0.6) + kt * kt * tipY;
+          var side = (k % 2 ? 1 : -1) * 5;
+          c.strokeStyle = '#6a4ab0';
+          c.lineWidth = 1.5;
+          c.beginPath(); c.moveTo(kx, ky); c.lineTo(kx + side, ky - 3); c.stroke();
+          c.fillStyle = '#d8ccff';
+          c.beginPath(); c.arc(kx + side, ky - 3, 1.6 + 0.5 * Math.sin(t * 3 + k + f), 0, Math.PI * 2); c.fill();
+        }
+        c.fillStyle = '#ffffff';
+        c.beginPath(); c.arc(tipX, tipY, 2.2, 0, Math.PI * 2); c.fill();
+      }
+    } else {
+      for (var i = 0; i < 5; i++) {
+        var a = -Math.PI / 2 + (i - 2) * 0.32;
+        var len = 34 + (i % 2) * 8;
+        var ex = dx + Math.cos(a) * len + sway * (0.6 + i * 0.1), ey = dy + Math.sin(a) * len;
+        c.strokeStyle = '#124a48';
+        c.lineWidth = 4.5;
+        c.beginPath(); c.moveTo(dx + (i - 2) * 2, dy); c.quadraticCurveTo(dx + (i - 2) * 6, dy - len * 0.5, ex, ey); c.stroke();
+        c.strokeStyle = '#2a9a90';
+        c.lineWidth = 2;
+        c.beginPath(); c.moveTo(dx + (i - 2) * 2, dy); c.quadraticCurveTo(dx + (i - 2) * 6, dy - len * 0.5, ex, ey); c.stroke();
+        var tg = c.createRadialGradient(ex, ey, 0.5, ex, ey, 5);
+        tg.addColorStop(0, '#ffffff');
+        tg.addColorStop(0.5, '#8ffff0');
+        tg.addColorStop(1, 'rgba(63, 240, 216, 0)');
+        c.fillStyle = tg;
+        c.beginPath(); c.arc(ex, ey, 5, 0, Math.PI * 2); c.fill();
+      }
+      c.fillStyle = '#0d3836';
+      c.beginPath(); c.ellipse(dx, dy, 9, 4, 0, 0, Math.PI * 2); c.fill();
+    }
+    c.restore();
+  }
+
+  /* Hydrothermal vent: a dark layered chimney breathing warm light and
+     slow puffs of smoke. */
+  function drawVent(c, dx, dy, t, seed) {
+    c.save();
+    /* Smoke puffs rising on a loop */
+    for (var s = 0; s < 4; s++) {
+      var ph = ((t * 0.35 + s * 0.25 + seed * 0.001) % 1);
+      var sy = dy - 68 - ph * 90;
+      var sx = dx + Math.sin(ph * 6 + s) * 8;
+      c.fillStyle = 'rgba(40, 36, 50, ' + (0.4 * (1 - ph)) + ')';
+      c.beginPath(); c.arc(sx, sy, 7 + ph * 14, 0, Math.PI * 2); c.fill();
+    }
+    /* Chimney body */
+    var g = c.createLinearGradient(dx - 20, 0, dx + 20, 0);
+    g.addColorStop(0, '#15161c');
+    g.addColorStop(0.5, '#3a3c48');
+    g.addColorStop(1, '#101117');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(dx - 22, dy + 2);
+    c.lineTo(dx - 14, dy - 30);
+    c.lineTo(dx - 9, dy - 64);
+    c.lineTo(dx + 8, dy - 64);
+    c.lineTo(dx + 15, dy - 32);
+    c.lineTo(dx + 24, dy + 2);
+    c.closePath();
+    c.fill();
+    /* Layer ridges */
+    c.strokeStyle = 'rgba(120, 130, 150, 0.25)';
+    c.lineWidth = 1.2;
+    for (var r = 0; r < 4; r++) {
+      var ry = dy - 10 - r * 14;
+      var rw = 18 - r * 2.5;
+      c.beginPath(); c.moveTo(dx - rw, ry); c.quadraticCurveTo(dx, ry + 4, dx + rw, ry); c.stroke();
+    }
+    /* Glowing mouth and heat cracks */
+    var flick = 0.7 + 0.3 * Math.sin(t * 9 + seed);
+    var mg = c.createRadialGradient(dx, dy - 64, 1, dx, dy - 64, 12);
+    mg.addColorStop(0, 'rgba(255, 240, 180, ' + flick + ')');
+    mg.addColorStop(0.5, 'rgba(255, 140, 40, ' + flick * 0.8 + ')');
+    mg.addColorStop(1, 'rgba(255, 80, 20, 0)');
+    c.fillStyle = mg;
+    c.beginPath(); c.ellipse(dx, dy - 64, 12, 6, 0, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(255, 120, 40, ' + (0.5 * flick) + ')';
+    c.lineWidth = 1.2;
+    c.beginPath();
+    c.moveTo(dx - 4, dy - 58); c.lineTo(dx - 7, dy - 44); c.lineTo(dx - 3, dy - 36);
+    c.moveTo(dx + 5, dy - 56); c.lineTo(dx + 8, dy - 40);
+    c.stroke();
+    c.restore();
+  }
+
+  /* Cluster of glowing crystal shards growing out of the rock */
+  function drawCrystal(c, dx, dy, seed) {
+    var shards = [[-12, 26, -0.35], [-2, 42, -0.08], [9, 34, 0.18], [18, 22, 0.42]];
+    c.save();
+    c.fillStyle = '#1a2030';
+    c.beginPath(); c.ellipse(dx + 3, dy, 24, 6, 0, 0, Math.PI * 2); c.fill();
+    for (var i = 0; i < shards.length; i++) {
+      var sx = dx + shards[i][0], h = shards[i][1], tilt = shards[i][2];
+      var w = 6 + (i % 2) * 2;
+      c.save();
+      c.translate(sx, dy);
+      c.rotate(tilt);
+      var g = c.createLinearGradient(-w, 0, w, 0);
+      g.addColorStop(0, '#2a6ad0');
+      g.addColorStop(0.5, '#9fe8ff');
+      g.addColorStop(1, '#3a7ae0');
+      c.fillStyle = g;
+      c.beginPath();
+      c.moveTo(-w, 2);
+      c.lineTo(-w * 0.8, -h * 0.75);
+      c.lineTo(0, -h);
+      c.lineTo(w * 0.8, -h * 0.75);
+      c.lineTo(w, 2);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = 'rgba(10, 30, 80, 0.6)';
+      c.lineWidth = 1;
+      c.stroke();
+      /* Facet highlight */
+      c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      c.beginPath();
+      c.moveTo(-w * 0.5, 0);
+      c.lineTo(-w * 0.4, -h * 0.7);
+      c.lineTo(0, -h + 2);
+      c.lineTo(-w * 0.1, -h * 0.6);
+      c.closePath();
+      c.fill();
+      c.restore();
+    }
+    c.restore();
   }
 
   /* ---- Click handling ---- */
@@ -1636,23 +2503,36 @@
 
       case State.INTRO:
         var iAction = Game.ui.handleIntroClick(mx, my);
-        if (iAction === 'start') startGame();
+        if (iAction === 'start') { Game.audio.startMusic('title'); state = State.LEVEL_SELECT; }
+        break;
+
+      case State.LEVEL_SELECT:
+        var sAction = Game.ui.handleLevelSelectClick(mx, my);
+        if (sAction && sAction.action === 'level') startLevel(sAction.index, false);
+        else if (sAction && sAction.action === 'title') state = State.TITLE;
+        break;
+
+      case State.LEVEL_CLEAR:
+        var lcAction = Game.ui.handleLevelClearClick(mx, my, lastClear);
+        if (lcAction === 'next') startLevel(currentLevel + 1, false);
+        else if (lcAction === 'select') { Game.audio.startMusic('title'); state = State.LEVEL_SELECT; }
         break;
 
       case State.PAUSED:
         var pAction = Game.ui.handlePauseClick(mx, my);
         if (pAction === 'resume') state = State.PLAYING;
-        else if (pAction === 'quit') { Game.audio.startMusic('title'); state = State.TITLE; }
+        else if (pAction === 'quit') { Game.audio.startMusic('title'); state = State.LEVEL_SELECT; }
         break;
 
       case State.GAME_OVER:
         var gAction = Game.ui.handleGameOverClick(mx, my);
-        if (gAction === 'retry') startGame(lastDeathInBoss);
+        if (gAction === 'retry') startLevel(currentLevel, lastDeathInBoss);
         break;
 
       case State.VICTORY:
         var vAction = Game.ui.handleVictoryClick(mx, my);
         if (vAction === 'restart') { Game.audio.startMusic('title'); state = State.TITLE; }
+        else if (vAction === 'select') { Game.audio.startMusic('title'); state = State.LEVEL_SELECT; }
         break;
 
       case State.BEACH:
@@ -1666,12 +2546,25 @@
     }
   }
 
-  /* ---- Start game ----
+  /* ---- Start a level ----
      When fromBoss is true (retry after dying to the boss), drop the player
      just outside the boss arena and re-arm the boss so they don't have to
-     swim through the whole level again. */
-  function startGame(fromBoss) {
-    loadLevel(0);
+     swim through the whole level again. The pearls they had already
+     collected are kept, so a boss death doesn't cost them their stars. */
+  function startLevel(index, fromBoss) {
+    if (!Game.levels.get(index)) index = 0;
+    var keep = (fromBoss && index === currentLevel && level)
+      ? { pickups: pickups, chests: chests, got: pearlsCollected, total: pearlTotal }
+      : null;
+    if (!fromBoss) bossDeathBonus = 0;
+    currentLevel = index;
+    loadLevel(index);
+    if (keep) {
+      pickups = keep.pickups;
+      chests = keep.chests;
+      pearlsCollected = keep.got;
+      pearlTotal = keep.total;
+    }
     camera = { x: 0, y: 0 };
     Game.audio.init();
     Game.audio.resume();
@@ -1793,6 +2686,7 @@
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
+    loadProgress();
     computeCanvasLayout();
     resizeBackingStore();
 
@@ -1842,6 +2736,27 @@
     init: init,
     State: State,
     drawCoral: drawCoral,
+    drawDecorationAt: drawDecorationAt,
+    /* Debug / test hooks: jump straight to a level or its boss, run the
+       simulation by hand when requestAnimationFrame is throttled. */
+    _startLevel: function (i) { startLevel(i, false); },
+    _warpToBoss: function () {
+      if (!level) return;
+      player.x = Math.max(0, level.bossAreaX - 60);
+      player.y = 220;
+      camera.x = Math.max(0, Math.min(player.x - W / 2, level.width - W));
+    },
+    _forceRender: function () { render(); },
+    _getState: function () { return state; },
+    _step: function (n) { for (var i = 0; i < (n || 1); i++) update(); render(); },
+    _clearLevel: function () { if (state === State.PLAYING) finishLevel(); },
+    _teleport: function (x, y) {
+      if (!player) return;
+      player.x = x; player.y = y; player.vx = 0; player.vy = 0;
+      camera.x = Math.max(0, Math.min(x - W / 2, level.width - W));
+    },
+    _setState: function (s) { state = s; },
+    _bossHp: function () { return boss ? boss.hp : -1; },
   };
 
   /* Auto-init when DOM is ready */

@@ -2092,8 +2092,14 @@
     c.restore();
   };
 
-  Moni.prototype.drawHealthBar = function (c) {
-    if (!this.active || this.defeated) return;
+  /* Boss health bar shared by Moni and the mini-bosses: a framed pill
+     with a gradient fill, gloss and an outlined name label. */
+  var BOSS_BAR_PALETTES = {
+    moni:         { frame: '#2a0830', edge: '#f0b0ff', track: '#5a1a60', top: '#f27af2', bot: '#a832b8' },
+    giantOctopus: { frame: '#1d0a30', edge: '#d9a6ff', track: '#3a1a5a', top: '#c988ff', bot: '#7a3cc0' },
+    kingCrab:     { frame: '#3a0e08', edge: '#ffc9a6', track: '#5a2010', top: '#ff9c5a', bot: '#d4451e' },
+  };
+  function drawBossBar(c, hp, maxHp, label, pal) {
     var barW = 220;
     var barH = 18;
     var bx = (W - barW) / 2;
@@ -2110,22 +2116,22 @@
     }
     c.save();
     /* Frame */
-    c.fillStyle = '#2a0830';
+    c.fillStyle = pal.frame;
     pill(bx - 3, by - 3, barW + 6, barH + 6, r + 3);
     c.fill();
-    c.strokeStyle = '#f0b0ff';
+    c.strokeStyle = pal.edge;
     c.lineWidth = 2;
     c.stroke();
     /* Track + fill, clipped to the rounded inside */
     pill(bx, by, barW, barH, r);
     c.clip();
-    c.fillStyle = '#5a1a60';
+    c.fillStyle = pal.track;
     c.fillRect(bx, by, barW, barH);
     var g = c.createLinearGradient(0, by, 0, by + barH);
-    g.addColorStop(0, '#f27af2');
-    g.addColorStop(1, '#a832b8');
+    g.addColorStop(0, pal.top);
+    g.addColorStop(1, pal.bot);
     c.fillStyle = g;
-    c.fillRect(bx, by, barW * Math.max(0, this.hp / this.maxHp), barH);
+    c.fillRect(bx, by, barW * Math.max(0, hp / maxHp), barH);
     c.fillStyle = 'rgba(255, 255, 255, 0.18)';
     c.fillRect(bx, by, barW, barH * 0.4);
     c.restore();
@@ -2136,11 +2142,16 @@
     c.textBaseline = 'middle';
     c.lineJoin = 'round';
     c.lineWidth = 3;
-    c.strokeStyle = '#2a0830';
-    c.strokeText(Game.i18n.t('bossHP'), W / 2, by + barH / 2 + 1);
+    c.strokeStyle = pal.frame;
+    c.strokeText(label, W / 2, by + barH / 2 + 1);
     c.fillStyle = '#ffffff';
-    c.fillText(Game.i18n.t('bossHP'), W / 2, by + barH / 2 + 1);
+    c.fillText(label, W / 2, by + barH / 2 + 1);
     c.restore();
+  }
+
+  Moni.prototype.drawHealthBar = function (c) {
+    if (!this.active || this.defeated) return;
+    drawBossBar(c, this.hp, this.maxHp, Game.i18n.t('bossHP'), BOSS_BAR_PALETTES.moni);
   };
 
   /* ========== OLIVER (NPC - Otter) ========== */
@@ -2948,6 +2959,1199 @@
     c.restore();
   };
 
+  /* ========== PEARL (Collectible) ========== */
+  /* `opts.shell` draws a half scallop shell under a floor pearl; `opts.vx /
+     vy` give a pearl popped out of a chest an initial toss, after which it
+     settles and bobs where it ended up. */
+  function Pearl(x, y, opts) {
+    opts = opts || {};
+    this.x = x;
+    this.y = y;
+    this.w = 14;
+    this.h = 14;
+    this.spawnY = y;
+    this.shell = !!opts.shell;
+    this.vx = opts.vx || 0;
+    this.vy = opts.vy || 0;
+    this.settle = (this.vx || this.vy) ? 45 : 0;
+    this.timer = Math.random() * 100;
+    this.active = true;
+    this.isPearl = true;
+  }
+
+  Pearl.prototype.update = function () {
+    this.timer++;
+    if (this.settle > 0) {
+      this.settle--;
+      this.vy += 0.06;
+      this.vx *= 0.96;
+      this.vy *= 0.96;
+      this.x += this.vx;
+      this.y += this.vy;
+      if (this.y < 20) { this.y = 20; this.vy = 0; }
+      this.spawnY = this.y;
+      return;
+    }
+    if (!this.shell) this.y = this.spawnY + Math.sin(this.timer * 0.05) * 5;
+  };
+
+  function drawPearlSprite(c) {
+    var g = c.createRadialGradient(7.5, 7, 1, 10, 10, 8);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.35, '#fff1f6');
+    g.addColorStop(0.75, '#f3c9dc');
+    g.addColorStop(1, '#b893b4');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(10, 10, 7.5, 0, Math.PI * 2); c.fill();
+    /* Iridescent sheen along the lower-right rim */
+    c.strokeStyle = 'rgba(160, 230, 255, 0.6)';
+    c.lineWidth = 1.3;
+    c.beginPath(); c.arc(10, 10, 6.4, 0.3, 1.7); c.stroke();
+    c.strokeStyle = 'rgba(255, 190, 220, 0.5)';
+    c.beginPath(); c.arc(10, 10, 6.4, 1.9, 2.6); c.stroke();
+    c.strokeStyle = 'rgba(90, 60, 100, 0.55)';
+    c.lineWidth = 1;
+    c.beginPath(); c.arc(10, 10, 7.5, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = 'rgba(255,255,255,0.95)';
+    c.beginPath(); c.ellipse(7.2, 6.8, 2.3, 1.4, -0.7, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.6)';
+    c.beginPath(); c.arc(12.6, 12.6, 0.9, 0, Math.PI * 2); c.fill();
+  }
+
+  function drawHalfShell(c) {
+    var g = c.createLinearGradient(0, 2, 0, 16);
+    g.addColorStop(0, '#ffe8cf');
+    g.addColorStop(1, '#d4915c');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(14, 3, 13, 0.12, Math.PI - 0.12); c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(120, 70, 40, 0.45)';
+    c.lineWidth = 1;
+    for (var i = -3; i <= 3; i++) {
+      var a = Math.PI / 2 + i * 0.3;
+      c.beginPath(); c.moveTo(14, 3); c.lineTo(14 + Math.cos(a) * 12.5, 3 + Math.sin(a) * 12.5); c.stroke();
+    }
+    c.strokeStyle = '#8a5a3a';
+    c.beginPath(); c.arc(14, 3, 13, 0.12, Math.PI - 0.12); c.stroke();
+    c.fillStyle = '#6e4428';
+    c.beginPath(); c.ellipse(14, 15, 3, 1.6, 0, 0, Math.PI * 2); c.fill();
+  }
+
+  function getPearlSprite() {
+    return getCachedSprite('pearl', 20, 20, drawPearlSprite);
+  }
+
+  Pearl.prototype.draw = function (c, camX, camY) {
+    if (!this.active) return;
+    var sx = this.x - camX + 7, sy = this.y - camY + 7;
+    var t = this.timer;
+    c.save();
+    var glow = c.createRadialGradient(sx, sy, 2, sx, sy, 16);
+    glow.addColorStop(0, 'rgba(255, 220, 240, 0.4)');
+    glow.addColorStop(1, 'rgba(255, 220, 240, 0)');
+    c.fillStyle = glow;
+    c.beginPath(); c.arc(sx, sy, 16, 0, Math.PI * 2); c.fill();
+    if (this.shell) {
+      c.drawImage(getCachedSprite('pearlShell', 28, 17, drawHalfShell), sx - 14, sy - 1);
+    }
+    c.drawImage(getPearlSprite(), sx - 10, sy - 10);
+    /* Four-point twinkle that fades in and out */
+    var tw = Math.sin(t * 0.12);
+    if (tw > 0) {
+      c.globalAlpha = tw;
+      c.fillStyle = '#ffffff';
+      var R = 2 + tw * 3;
+      var px = sx + 4.5, py = sy - 4.5;
+      c.beginPath();
+      c.moveTo(px, py - R);
+      c.quadraticCurveTo(px, py, px + R, py);
+      c.quadraticCurveTo(px, py, px, py + R);
+      c.quadraticCurveTo(px, py, px - R, py);
+      c.quadraticCurveTo(px, py, px, py - R);
+      c.fill();
+    }
+    c.restore();
+  };
+
+  /* ========== TREASURE CHEST (shoot to open) ========== */
+  function Chest(x, y, count) {
+    this.x = x;
+    this.y = y;
+    this.w = 36;
+    this.h = 28;
+    this.pearls = count || 4;
+    this.open = false;
+    this.openTimer = 0;
+    this.timer = Math.random() * 100;
+  }
+
+  Chest.prototype.update = function () {
+    this.timer++;
+    if (this.open) this.openTimer++;
+  };
+
+  /* Pops the lid and returns the pearls that fly out (or null if it was
+     already open). */
+  Chest.prototype.hit = function () {
+    if (this.open) return null;
+    this.open = true;
+    this.openTimer = 0;
+    Game.audio.play('chest');
+    var out = [];
+    for (var i = 0; i < this.pearls; i++) {
+      var a = -Math.PI / 2 + (i - (this.pearls - 1) / 2) * 0.38;
+      var sp = 2.2 + Math.random() * 1.1;
+      out.push(new Pearl(this.x + this.w / 2 - 7, this.y - 6, { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.2 }));
+    }
+    return out;
+  };
+
+  Chest.prototype.draw = function (c, camX, camY) {
+    var sx = Math.round(this.x - camX), sy = Math.round(this.y - camY);
+    var w = this.w, h = this.h;
+    var bodyY = sy + 10, bodyH = h - 10;
+    c.save();
+    c.fillStyle = 'rgba(4, 14, 26, 0.4)';
+    c.beginPath(); c.ellipse(sx + w / 2, sy + h + 2, w * 0.6, 4, 0, 0, Math.PI * 2); c.fill();
+
+    /* Closed chests get a soft gold shimmer so they read as "shoot me" */
+    if (!this.open) {
+      var sh = 0.5 + 0.5 * Math.sin(this.timer * 0.06);
+      var sg = c.createRadialGradient(sx + w / 2, sy + h / 2, 4, sx + w / 2, sy + h / 2, 34);
+      sg.addColorStop(0, 'rgba(255, 215, 110, ' + (0.12 + sh * 0.14) + ')');
+      sg.addColorStop(1, 'rgba(255, 215, 110, 0)');
+      c.fillStyle = sg;
+      c.fillRect(sx - 20, sy - 20, w + 40, h + 40);
+    }
+
+    /* Open: glow from inside plus a few pearls still nestled there */
+    if (this.open) {
+      var og = c.createRadialGradient(sx + w / 2, bodyY + 4, 2, sx + w / 2, bodyY + 4, w * 0.7);
+      og.addColorStop(0, 'rgba(255, 230, 250, 0.9)');
+      og.addColorStop(1, 'rgba(255, 200, 240, 0)');
+      c.fillStyle = og;
+      c.fillRect(sx - 8, sy - 14, w + 16, h + 14);
+    }
+
+    /* Body – planked box */
+    var wg = c.createLinearGradient(0, bodyY, 0, bodyY + bodyH);
+    wg.addColorStop(0, '#b0703c');
+    wg.addColorStop(1, '#5a3418');
+    c.fillStyle = wg;
+    c.fillRect(sx, bodyY, w, bodyH);
+    c.strokeStyle = 'rgba(60, 30, 10, 0.5)';
+    c.lineWidth = 1;
+    for (var p = 1; p < 3; p++) {
+      c.beginPath(); c.moveTo(sx, bodyY + p * bodyH / 3); c.lineTo(sx + w, bodyY + p * bodyH / 3); c.stroke();
+    }
+    if (this.open) {
+      c.fillStyle = '#fff0f6';
+      for (var k = 0; k < 3; k++) {
+        c.beginPath(); c.arc(sx + 10 + k * 8, bodyY + 3, 3.2, 0, Math.PI * 2); c.fill();
+      }
+      c.fillStyle = 'rgba(255,255,255,0.9)';
+      for (k = 0; k < 3; k++) {
+        c.beginPath(); c.arc(sx + 9 + k * 8, bodyY + 2, 1, 0, Math.PI * 2); c.fill();
+      }
+    }
+
+    /* Lid – domed, swings back on its hinge when opened */
+    c.save();
+    if (this.open) {
+      var ang = -Math.min(1, this.openTimer / 12) * 2.1;
+      c.translate(sx, bodyY);
+      c.rotate(ang);
+      c.translate(-sx, -bodyY);
+    }
+    var lg = c.createLinearGradient(0, sy, 0, bodyY);
+    lg.addColorStop(0, '#d0905a');
+    lg.addColorStop(1, '#7a4a22');
+    c.fillStyle = lg;
+    c.beginPath();
+    c.moveTo(sx, bodyY);
+    c.lineTo(sx, sy + 6);
+    c.quadraticCurveTo(sx, sy, sx + 6, sy);
+    c.lineTo(sx + w - 6, sy);
+    c.quadraticCurveTo(sx + w, sy, sx + w, sy + 6);
+    c.lineTo(sx + w, bodyY);
+    c.closePath();
+    c.fill();
+    c.fillStyle = 'rgba(255, 220, 170, 0.3)';
+    c.fillRect(sx + 3, sy + 2, w - 6, 2);
+    c.fillStyle = '#4a4a55';
+    c.fillRect(sx + 7, sy, 4, 10);
+    c.fillRect(sx + w - 11, sy, 4, 10);
+    c.fillStyle = 'rgba(255,255,255,0.3)';
+    c.fillRect(sx + 8, sy + 1, 1.2, 9);
+    c.fillRect(sx + w - 10, sy + 1, 1.2, 9);
+    c.strokeStyle = 'rgba(40, 20, 8, 0.6)';
+    c.beginPath();
+    c.moveTo(sx, bodyY);
+    c.lineTo(sx, sy + 6);
+    c.quadraticCurveTo(sx, sy, sx + 6, sy);
+    c.lineTo(sx + w - 6, sy);
+    c.quadraticCurveTo(sx + w, sy, sx + w, sy + 6);
+    c.lineTo(sx + w, bodyY);
+    c.stroke();
+    c.restore();
+
+    /* Iron bands and lock plate */
+    c.fillStyle = '#4a4a55';
+    c.fillRect(sx + 7, bodyY, 4, bodyH);
+    c.fillRect(sx + w - 11, bodyY, 4, bodyH);
+    c.fillStyle = 'rgba(255,255,255,0.3)';
+    c.fillRect(sx + 8, bodyY, 1.2, bodyH);
+    c.fillRect(sx + w - 10, bodyY, 1.2, bodyH);
+    if (!this.open) {
+      c.fillStyle = '#ffd24a';
+      c.fillRect(sx + w / 2 - 4, bodyY - 3, 8, 8);
+      c.fillStyle = '#ffeb9a';
+      c.fillRect(sx + w / 2 - 3, bodyY - 2, 6, 1.5);
+      c.fillStyle = '#7a5418';
+      c.beginPath(); c.arc(sx + w / 2, bodyY + 1.5, 1.4, 0, Math.PI * 2); c.fill();
+    }
+    c.strokeStyle = 'rgba(40, 20, 8, 0.6)';
+    c.strokeRect(sx + 0.5, bodyY + 0.5, w - 1, bodyH - 1);
+    c.restore();
+  };
+
+  /* ========== JELLYFISH (Enemy) ========== */
+  /* Slow vertical bob with a pulsing translucent bell and trailing
+     tentacles. In the dark trench (`glow`) it is lit from inside in neon
+     teal / magenta / lime so the player can see it coming. */
+  function Jellyfish(x, y, glow) {
+    this.spawnX = x;
+    this.spawnY = y;
+    this.x = x;
+    this.y = y;
+    this.w = 26;
+    this.h = 30;
+    this.hp = 1;
+    this.timer = Math.random() * 200;
+    this.active = true;
+    this.flash = 0;
+    this.glow = !!glow;
+    this.hue = glow ? [178, 300, 110][Math.floor(Math.random() * 3)] : 335;
+  }
+
+  Jellyfish.prototype.update = function () {
+    if (!this.active) return;
+    this.timer++;
+    if (this.flash > 0) this.flash--;
+    this.y = this.spawnY + Math.sin(this.timer * 0.02) * 55;
+    this.x = this.spawnX + Math.sin(this.timer * 0.011) * 18;
+  };
+
+  Jellyfish.prototype.hit = function () {
+    this.hp--;
+    this.flash = 6;
+    if (this.hp <= 0) {
+      this.active = false;
+      Game.audio.play('enemyDefeat');
+      return true;
+    }
+    Game.audio.play('enemyHit');
+    return false;
+  };
+
+  Jellyfish.prototype.draw = function (c, camX, camY) {
+    if (!this.active) return;
+    if (this.flash > 0 && this.flash % 2 === 0) return;
+    var sx = this.x - camX + this.w / 2;
+    var sy = this.y - camY + 8;
+    var hue = this.hue;
+    var pulse = Math.sin(this.timer * 0.08);
+    var rx = 13 + pulse * 1.5, ry = 10 - pulse * 1.2;
+    c.save();
+    c.lineCap = 'round';
+    if (this.glow) {
+      var hg = c.createRadialGradient(sx, sy + 4, 2, sx, sy + 4, 34);
+      hg.addColorStop(0, 'hsla(' + hue + ', 90%, 70%, 0.45)');
+      hg.addColorStop(1, 'hsla(' + hue + ', 90%, 70%, 0)');
+      c.fillStyle = hg;
+      c.fillRect(sx - 36, sy - 32, 72, 72);
+    }
+    /* Tentacles – four thin trailing ones and two frilly oral arms */
+    for (var i = 0; i < 4; i++) {
+      var tx = sx - 8 + i * 5.3;
+      var w1 = Math.sin(this.timer * 0.06 + i * 1.3) * 4;
+      var w2 = Math.cos(this.timer * 0.05 + i) * 5;
+      c.strokeStyle = 'hsla(' + hue + ', 85%, ' + (this.glow ? 72 : 78) + '%, 0.75)';
+      c.lineWidth = 1.2;
+      c.beginPath();
+      c.moveTo(tx, sy + 6);
+      c.bezierCurveTo(tx + w1, sy + 14, tx - w2, sy + 22, tx + w1 * 0.6, sy + 30);
+      c.stroke();
+    }
+    for (var o = -1; o <= 1; o += 2) {
+      var ox = sx + o * 3.5;
+      var ow = Math.sin(this.timer * 0.07 + o) * 3;
+      c.strokeStyle = 'hsla(' + hue + ', 80%, ' + (this.glow ? 65 : 70) + '%, 0.9)';
+      c.lineWidth = 3;
+      c.beginPath();
+      c.moveTo(ox, sy + 6);
+      c.quadraticCurveTo(ox + ow + o * 4, sy + 14, ox + ow, sy + 20);
+      c.stroke();
+      c.lineWidth = 1;
+      c.strokeStyle = 'rgba(255,255,255,0.35)';
+      c.beginPath();
+      c.moveTo(ox - 1, sy + 7);
+      c.quadraticCurveTo(ox + ow + o * 4 - 1, sy + 14, ox + ow - 1, sy + 18);
+      c.stroke();
+    }
+    /* Bell – translucent dome with an inner lit core */
+    var bg = c.createRadialGradient(sx - 4, sy - 5, 1, sx, sy - 1, rx + 2);
+    bg.addColorStop(0, 'hsla(' + hue + ', 100%, 92%, 0.95)');
+    bg.addColorStop(0.55, 'hsla(' + hue + ', 90%, 72%, 0.75)');
+    bg.addColorStop(1, 'hsla(' + hue + ', 80%, 55%, 0.55)');
+    c.fillStyle = bg;
+    c.beginPath();
+    c.ellipse(sx, sy, rx, ry, 0, Math.PI, 0);
+    c.quadraticCurveTo(sx + rx * 0.5, sy + 5, sx, sy + 4);
+    c.quadraticCurveTo(sx - rx * 0.5, sy + 5, sx - rx, sy);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = 'hsla(' + hue + ', 80%, 85%, 0.8)';
+    c.lineWidth = 1.2;
+    c.stroke();
+    /* Scalloped skirt */
+    c.strokeStyle = 'hsla(' + hue + ', 80%, 88%, 0.6)';
+    c.lineWidth = 1;
+    c.beginPath();
+    for (var s = -3; s <= 3; s++) {
+      var skx = sx + s * (rx / 3.2);
+      c.moveTo(skx - 1.5, sy + 2);
+      c.quadraticCurveTo(skx, sy + 5.5, skx + 1.5, sy + 2);
+    }
+    c.stroke();
+    /* Inner organ glow */
+    var ig = c.createRadialGradient(sx, sy - 2, 0.5, sx, sy - 2, 6);
+    ig.addColorStop(0, 'rgba(255,255,255,0.8)');
+    ig.addColorStop(1, 'hsla(' + hue + ', 90%, 70%, 0)');
+    c.fillStyle = ig;
+    c.beginPath(); c.arc(sx, sy - 2, 6, 0, Math.PI * 2); c.fill();
+    /* Dome highlight */
+    c.fillStyle = 'rgba(255,255,255,0.55)';
+    c.beginPath(); c.ellipse(sx - 5, sy - 6, 3.5, 1.8, -0.5, 0, Math.PI * 2); c.fill();
+    /* Sleepy eyes */
+    c.strokeStyle = 'rgba(60, 20, 70, 0.75)';
+    c.lineWidth = 1.3;
+    c.beginPath();
+    c.arc(sx - 4, sy - 1, 2, 0.2, Math.PI - 0.2);
+    c.moveTo(sx + 6, sy - 1);
+    c.arc(sx + 4, sy - 1, 2, 0.2, Math.PI - 0.2);
+    c.stroke();
+    c.restore();
+  };
+
+  /* ========== EEL (Enemy) ========== */
+  /* Lives in a hole at (x, y) and lunges out horizontally in `dir` when
+     Momoko swims in front of it, holds, then slides back. Hitbox is the
+     stretched body; it is harmless while hidden. */
+  function Eel(x, y, dir) {
+    this.homeX = x;
+    this.homeY = y;
+    this.dir = dir || 1;
+    this.ext = 0;
+    this.maxExt = 96;
+    this.mode = 'hide';
+    this.modeTimer = 0;
+    this.cooldown = 0;
+    this.hp = 2;
+    this.active = true;
+    this.flash = 0;
+    this.timer = Math.random() * 100;
+    this.headW = 24;
+    this.h = 18;
+    this.x = x;
+    this.y = y - 9;
+    this.w = 0;
+  }
+
+  Eel.prototype.update = function (px, py) {
+    if (!this.active) return;
+    this.timer++;
+    if (this.flash > 0) this.flash--;
+    if (this.cooldown > 0) this.cooldown--;
+    this.modeTimer++;
+    var dx = (px || 0) - this.homeX;
+    var dy = (py || 0) - this.homeY;
+    var inFront = this.dir === 1 ? (dx > 0 && dx < 170) : (dx < 0 && dx > -170);
+    if (this.mode === 'hide') {
+      this.ext = Math.max(0, this.ext - 4);
+      if (this.cooldown <= 0 && inFront && Math.abs(dy) < 60) {
+        this.mode = 'lunge';
+        this.modeTimer = 0;
+      }
+    } else if (this.mode === 'lunge') {
+      this.ext = Math.min(this.maxExt, this.ext + 7);
+      if (this.ext >= this.maxExt) { this.mode = 'hold'; this.modeTimer = 0; }
+    } else if (this.mode === 'hold') {
+      if (this.modeTimer > 28) { this.mode = 'retreat'; this.modeTimer = 0; }
+    } else {
+      this.ext = Math.max(0, this.ext - 3.5);
+      if (this.ext <= 0) { this.mode = 'hide'; this.modeTimer = 0; this.cooldown = 70; }
+    }
+    /* Hitbox follows the stretched body */
+    if (this.ext > 10) {
+      this.w = this.headW + this.ext - 10;
+      this.x = this.dir === 1 ? this.homeX : this.homeX - this.w;
+    } else {
+      this.w = 0;
+      this.x = this.homeX;
+    }
+  };
+
+  Eel.prototype.hit = function () {
+    if (this.ext <= 10) return false;
+    this.hp--;
+    this.flash = 8;
+    if (this.hp <= 0) {
+      this.active = false;
+      Game.audio.play('enemyDefeat');
+      return true;
+    }
+    Game.audio.play('enemyHit');
+    return false;
+  };
+
+  Eel.prototype.draw = function (c, camX, camY) {
+    var hx = this.homeX - camX, hy = this.homeY - camY;
+    c.save();
+    /* The hole: dark mouth with a rocky rim, always drawn so the lair is
+       readable even when the eel is gone. */
+    c.fillStyle = '#2a1e2e';
+    c.beginPath(); c.ellipse(hx, hy, 17, 13, 0, 0, Math.PI * 2); c.fill();
+    var hg = c.createRadialGradient(hx, hy, 2, hx, hy, 15);
+    hg.addColorStop(0, '#05030a');
+    hg.addColorStop(1, 'rgba(5, 3, 10, 0)');
+    c.fillStyle = hg;
+    c.beginPath(); c.ellipse(hx, hy, 15, 11, 0, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(190, 150, 160, 0.4)';
+    c.lineWidth = 2;
+    c.beginPath(); c.ellipse(hx, hy, 17, 13, 0, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
+    if (!this.active) { c.restore(); return; }
+    if (this.flash > 0 && this.flash % 2 === 0) { c.restore(); return; }
+
+    /* Body is authored extending to the right; flip for dir -1 */
+    c.translate(hx, hy);
+    if (this.dir === -1) c.scale(-1, 1);
+    var ext = this.ext;
+    var peek = ext <= 10;
+    var headX = peek ? 4 : ext + 2;
+    var wave = Math.sin(this.timer * 0.2) * 3;
+    if (!peek) {
+      /* Tapered body in two passes (dark edge, lighter core) plus a
+         dorsal ribbon fin */
+      c.lineCap = 'round';
+      var pts = [[0, 0], [ext * 0.33, wave], [ext * 0.66, -wave], [headX, 0]];
+      c.strokeStyle = '#2f4a2a';
+      c.lineWidth = 14;
+      c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+      c.bezierCurveTo(pts[1][0], pts[1][1], pts[2][0], pts[2][1], pts[3][0], pts[3][1]);
+      c.stroke();
+      c.strokeStyle = '#6a9a4c';
+      c.lineWidth = 9;
+      c.beginPath(); c.moveTo(pts[0][0], -1);
+      c.bezierCurveTo(pts[1][0], pts[1][1] - 1, pts[2][0], pts[2][1] - 1, pts[3][0], -1);
+      c.stroke();
+      c.strokeStyle = '#d9e4a0';
+      c.lineWidth = 3;
+      c.beginPath(); c.moveTo(0, 3);
+      c.bezierCurveTo(pts[1][0], pts[1][1] + 3, pts[2][0], pts[2][1] + 3, headX - 4, 3);
+      c.stroke();
+      /* Dorsal fin ribbon */
+      c.fillStyle = 'rgba(160, 200, 90, 0.75)';
+      c.beginPath();
+      c.moveTo(4, -6);
+      for (var f = 0; f <= 6; f++) {
+        var fx = 4 + (headX - 10) * f / 6;
+        c.lineTo(fx, -8 - Math.sin(this.timer * 0.25 + f) * 2.5 - (f % 2) * 2);
+      }
+      c.lineTo(headX - 6, -6);
+      c.closePath();
+      c.fill();
+      /* Spots */
+      c.fillStyle = 'rgba(40, 70, 30, 0.6)';
+      for (var sp = 1; sp < 5; sp++) {
+        c.beginPath(); c.arc(ext * sp / 5, (sp % 2 ? -2 : 2), 1.6, 0, Math.PI * 2); c.fill();
+      }
+    }
+    /* Head – wedge with a hinged jaw that gapes while lunging */
+    var jaw = this.mode === 'lunge' || this.mode === 'hold' ? 0.55 : 0.12;
+    var g = c.createLinearGradient(0, -9, 0, 9);
+    g.addColorStop(0, '#78a858');
+    g.addColorStop(1, '#3a5a30');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(headX - 8, -8);
+    c.quadraticCurveTo(headX + 8, -9, headX + 16, -2);
+    c.lineTo(headX + 6, 1);
+    c.lineTo(headX - 8, 6);
+    c.closePath();
+    c.fill();
+    /* Lower jaw */
+    c.save();
+    c.translate(headX - 2, 2);
+    c.rotate(jaw);
+    c.fillStyle = '#5a7a44';
+    c.beginPath();
+    c.moveTo(-6, -1);
+    c.quadraticCurveTo(8, 2, 17, 0);
+    c.lineTo(10, 6);
+    c.lineTo(-6, 5);
+    c.closePath();
+    c.fill();
+    c.fillStyle = '#ffffff';
+    for (var tth = 0; tth < 3; tth++) {
+      c.beginPath(); c.moveTo(3 + tth * 4.5, 0); c.lineTo(5 + tth * 4.5, -3); c.lineTo(7 + tth * 4.5, 0); c.closePath(); c.fill();
+    }
+    c.restore();
+    /* Upper teeth and mouth interior */
+    c.fillStyle = '#ffffff';
+    for (var ut = 0; ut < 3; ut++) {
+      c.beginPath(); c.moveTo(headX + 2 + ut * 4.5, 0); c.lineTo(headX + 4 + ut * 4.5, 3); c.lineTo(headX + 6 + ut * 4.5, 0); c.closePath(); c.fill();
+    }
+    /* Eye – yellow with a slit pupil */
+    c.fillStyle = '#ffe066';
+    c.beginPath(); c.arc(headX + 2, -4, 3.2, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#1a1a10';
+    c.beginPath(); c.ellipse(headX + 2.5, -4, 1.1, 2.4, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.8)';
+    c.beginPath(); c.arc(headX + 1, -5.2, 0.8, 0, Math.PI * 2); c.fill();
+    /* Angry brow */
+    c.strokeStyle = '#243a20';
+    c.lineWidth = 1.6;
+    c.beginPath(); c.moveTo(headX - 2, -8.5); c.lineTo(headX + 6, -6.5); c.stroke();
+    c.restore();
+  };
+
+  /* ========== SHARK (Enemy) ========== */
+  function Shark(x, y, dir, range) {
+    this.spawnX = x;
+    this.spawnY = y;
+    this.x = x;
+    this.y = y;
+    this.w = 64;
+    this.h = 26;
+    this.hp = 2;
+    this.dir = dir || -1;
+    this.range = range || 220;
+    this.speed = 2.0;
+    this.timer = Math.random() * 100;
+    this.active = true;
+    this.flash = 0;
+  }
+
+  Shark.prototype.update = function (px) {
+    if (!this.active) return;
+    this.timer++;
+    if (this.flash > 0) this.flash--;
+    /* Speeds up when Momoko is ahead of its nose */
+    var ahead = px !== undefined && ((this.dir === -1 && px < this.x && this.x - px < 200) ||
+                                     (this.dir === 1 && px > this.x + this.w && px - this.x - this.w < 200));
+    var target = ahead ? 3.0 : 2.0;
+    this.speed += (target - this.speed) * 0.05;
+    this.x += this.speed * this.dir;
+    this.y = this.spawnY + Math.sin(this.timer * 0.03) * 14;
+    if (this.x - this.spawnX > this.range) this.dir = -1;
+    if (this.spawnX - this.x > this.range) this.dir = 1;
+  };
+
+  Shark.prototype.hit = function () {
+    this.hp--;
+    this.flash = 8;
+    if (this.hp <= 0) {
+      this.active = false;
+      Game.audio.play('enemyDefeat');
+      return true;
+    }
+    Game.audio.play('enemyHit');
+    return false;
+  };
+
+  Shark.prototype.draw = function (c, camX, camY) {
+    if (!this.active) return;
+    if (this.flash > 0 && this.flash % 2 === 0) return;
+    var sx = Math.round(this.x - camX);
+    var sy = Math.round(this.y - camY);
+    c.save();
+    if (this.dir === 1) {
+      c.translate(sx + this.w / 2, 0);
+      c.scale(-1, 1);
+      sx = -this.w / 2;
+    }
+    var tail = Math.sin(this.timer * 0.18) * 4;
+    var cy = sy + 13;
+    /* Tail fin – tall crescent */
+    c.fillStyle = '#5f7489';
+    c.beginPath();
+    c.moveTo(sx + 54, cy - 2);
+    c.quadraticCurveTo(sx + 60 + tail, cy - 16, sx + 66 + tail, cy - 15);
+    c.quadraticCurveTo(sx + 60 + tail * 0.5, cy - 4, sx + 64 + tail, cy + 11);
+    c.quadraticCurveTo(sx + 58 + tail * 0.5, cy + 6, sx + 54, cy + 3);
+    c.closePath();
+    c.fill();
+    /* Dorsal fin */
+    c.beginPath();
+    c.moveTo(sx + 24, cy - 8);
+    c.quadraticCurveTo(sx + 30, cy - 24, sx + 40, cy - 20);
+    c.quadraticCurveTo(sx + 36, cy - 12, sx + 38, cy - 8);
+    c.closePath();
+    c.fill();
+    /* Pectoral fin (far side, darker) */
+    c.fillStyle = '#4c6075';
+    c.beginPath();
+    c.moveTo(sx + 22, cy + 6);
+    c.quadraticCurveTo(sx + 28, cy + 20, sx + 40, cy + 18);
+    c.quadraticCurveTo(sx + 32, cy + 10, sx + 32, cy + 6);
+    c.closePath();
+    c.fill();
+    /* Body – spindle with a grey back and white belly */
+    var g = c.createLinearGradient(0, cy - 12, 0, cy + 12);
+    g.addColorStop(0, '#8ea2b6');
+    g.addColorStop(0.5, '#6a7f94');
+    g.addColorStop(0.62, '#e8eef4');
+    g.addColorStop(1, '#c9d4de');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(sx, cy + 1);
+    c.quadraticCurveTo(sx + 10, cy - 13, sx + 34, cy - 11);
+    c.quadraticCurveTo(sx + 50, cy - 9, sx + 58, cy);
+    c.quadraticCurveTo(sx + 50, cy + 10, sx + 34, cy + 12);
+    c.quadraticCurveTo(sx + 10, cy + 13, sx, cy + 1);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = 'rgba(30, 45, 60, 0.6)';
+    c.lineWidth = 1;
+    c.stroke();
+    /* Gill slits */
+    c.strokeStyle = 'rgba(40, 55, 70, 0.7)';
+    c.lineWidth = 1.2;
+    for (var gl = 0; gl < 3; gl++) {
+      c.beginPath();
+      c.moveTo(sx + 17 + gl * 3, cy - 4);
+      c.quadraticCurveTo(sx + 15 + gl * 3, cy, sx + 17 + gl * 3, cy + 5);
+      c.stroke();
+    }
+    /* Mouth with a zigzag of teeth */
+    c.strokeStyle = '#2a3a4a';
+    c.lineWidth = 1.4;
+    c.beginPath();
+    c.moveTo(sx + 2, cy + 4);
+    c.quadraticCurveTo(sx + 8, cy + 8, sx + 16, cy + 6);
+    c.stroke();
+    c.fillStyle = '#ffffff';
+    c.beginPath();
+    for (var t = 0; t < 5; t++) {
+      var tx = sx + 4 + t * 2.6;
+      c.moveTo(tx, cy + 5 + t * 0.4);
+      c.lineTo(tx + 1.3, cy + 8 + t * 0.3);
+      c.lineTo(tx + 2.6, cy + 5 + t * 0.4);
+    }
+    c.fill();
+    /* Eye – small, with a hard stare */
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(sx + 10, cy - 3, 3, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#10161c';
+    c.beginPath(); c.arc(sx + 9.4, cy - 2.6, 1.8, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(sx + 8.8, cy - 3.4, 0.6, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#2a3a4a';
+    c.lineWidth = 1.6;
+    c.beginPath(); c.moveTo(sx + 6, cy - 8); c.lineTo(sx + 13, cy - 5.5); c.stroke();
+    /* Near-side pectoral fin */
+    c.fillStyle = '#7d91a5';
+    c.beginPath();
+    c.moveTo(sx + 26, cy + 5);
+    c.quadraticCurveTo(sx + 24, cy + 18, sx + 36, cy + 16);
+    c.quadraticCurveTo(sx + 34, cy + 9, sx + 36, cy + 5);
+    c.closePath();
+    c.fill();
+    c.restore();
+  };
+
+  /* ========== MINI-BOSS ========== */
+  /* Smaller guardians for the first two reefs. Shares Moni's interface
+     (activate / update / hit / draw / drawProjectiles / drawHealthBar,
+     plus the dialogue fields) so the engine's boss code is polymorphic.
+       'giantOctopus' – hovers, lunges at Momoko, spits ink blobs
+       'kingCrab'     – scuttles along the sand, flings shell pellets */
+  function MiniBoss(x, y, species) {
+    this.species = species || 'giantOctopus';
+    this.isMini = true;
+    this.x = x;
+    this.y = y;
+    this.homeX = x;
+    this.homeY = y;
+    if (this.species === 'kingCrab') { this.w = 96; this.h = 60; }
+    else { this.w = 84; this.h = 84; }
+    this.hp = 8;
+    this.maxHp = 8;
+    this.phase = 1;
+    this.active = false;
+    this.defeated = false;
+    this.defeatTimer = 0;
+    this.timer = 0;
+    this.attackTimer = 0;
+    this.flash = 0;
+    this.projectiles = [];
+    this.vx = 0;
+    this.vy = 0;
+    this.mode = 'hover';
+    this.modeTimer = 0;
+    this.tentaclePhase = 0;
+    this.legPhase = 0;
+    this.facing = -1;
+    this.floorY = 440;
+    this.hasChallenged = false;
+    this.hasTaunted = false;
+    this.dialogueQueue = [];
+    this.talkText = '';
+    this.talkSpeaker = '';
+    this.talkTimer = 0;
+    var crab = this.species === 'kingCrab';
+    this.nameKey = crab ? 'kingCrabName' : 'octoName';
+    this.hpKey = crab ? 'kingCrabHP' : 'octoHP';
+    this.tauntKey = crab ? 'kingCrabTaunt' : 'octoTaunt';
+    this.defeatKey = crab ? 'kingCrabDefeat' : 'octoDefeat';
+  }
+
+  MiniBoss.prototype.activate = function () {
+    this.active = true;
+    this.timer = 0;
+    if (this.species === 'kingCrab') this.y = this.floorY - this.h;
+  };
+
+  MiniBoss.prototype.update = function (px, py) {
+    if (!this.active) return;
+    if (this.defeated) {
+      this.defeatTimer++;
+      if (this.species !== 'kingCrab') this.y += 0.6;
+      return;
+    }
+    this.timer++;
+    if (this.flash > 0) this.flash--;
+    this.tentaclePhase += 0.07;
+    this.phase = this.hp <= this.maxHp / 2 ? 2 : 1;
+    var cx = this.x + this.w / 2, cy = this.y + this.h / 2;
+    this.facing = px < cx ? -1 : 1;
+    this.modeTimer++;
+    this.attackTimer++;
+    var i, p;
+
+    if (this.species === 'giantOctopus') {
+      if (this.mode === 'hover') {
+        this.x += (this.homeX + Math.sin(this.timer * 0.015) * 40 - this.x) * 0.05;
+        this.y += (this.homeY + Math.cos(this.timer * 0.02) * 28 - this.y) * 0.05;
+        if (this.modeTimer > (this.phase === 1 ? 170 : 115)) {
+          this.mode = 'lunge';
+          this.modeTimer = 0;
+          var dx = px - cx, dy = py - cy;
+          var d = Math.sqrt(dx * dx + dy * dy) || 1;
+          var sp = this.phase === 1 ? 4.6 : 5.4;
+          this.vx = dx / d * sp;
+          this.vy = dy / d * sp;
+        }
+      } else if (this.mode === 'lunge') {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vx *= 0.985;
+        this.vy *= 0.985;
+        if (this.modeTimer > 50) { this.mode = 'return'; this.modeTimer = 0; }
+      } else {
+        this.x += (this.homeX - this.x) * 0.04;
+        this.y += (this.homeY - this.y) * 0.04;
+        if (this.modeTimer > 80) { this.mode = 'hover'; this.modeTimer = 0; }
+      }
+      if (this.y < 70) this.y = 70;
+      if (this.y + this.h > this.floorY - 6) this.y = this.floorY - 6 - this.h;
+      if (this.x < this.homeX - 460) this.x = this.homeX - 460;
+      if (this.x + this.w > this.homeX + this.w + 120) this.x = this.homeX + 120;
+      /* Ink spit */
+      if (this.attackTimer >= (this.phase === 1 ? 95 : 65) && this.mode !== 'lunge') {
+        this.attackTimer = 0;
+        var n = this.phase === 1 ? 1 : 2;
+        for (i = 0; i < n; i++) {
+          var ang = Math.atan2(py - cy, px - cx) + (n === 1 ? 0 : (i - 0.5) * 0.4);
+          this.projectiles.push({ x: cx, y: cy + 10, vx: Math.cos(ang) * 2.4, vy: Math.sin(ang) * 2.4, life: 130, r: 7, kind: 'ink', spin: Math.random() * 6 });
+        }
+      }
+    } else {
+      /* King crab: scuttles on the sand toward Momoko's x */
+      var target = px - this.w / 2;
+      var step = (target - this.x) * 0.02;
+      var maxStep = this.phase === 1 ? 1.5 : 2.2;
+      if (step > maxStep) step = maxStep;
+      if (step < -maxStep) step = -maxStep;
+      this.x += step;
+      this.legPhase += Math.abs(step) * 0.35 + 0.02;
+      if (this.x < this.homeX - 420) this.x = this.homeX - 420;
+      if (this.x > this.homeX + 80) this.x = this.homeX + 80;
+      this.y = this.floorY - this.h + Math.abs(Math.sin(this.legPhase * 2)) * 1.5;
+      /* Fling a fan of shell pellets that arc down under gravity */
+      if (this.attackTimer >= (this.phase === 1 ? 115 : 80)) {
+        this.attackTimer = 0;
+        var dir = this.facing;
+        var count = this.phase === 1 ? 3 : 4;
+        for (i = 0; i < count; i++) {
+          var a = -Math.PI / 2 + dir * (0.35 + i * 0.28);
+          var spd = 4.2 + i * 0.3;
+          this.projectiles.push({ x: cx + dir * 30, y: this.y + 14, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, g: 0.09, life: 160, r: 6, kind: 'shell', spin: Math.random() * 6 });
+        }
+      }
+    }
+
+    for (i = this.projectiles.length - 1; i >= 0; i--) {
+      p = this.projectiles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      if (p.g) p.vy += p.g;
+      p.spin += 0.15;
+      p.life--;
+      if (p.life <= 0 || p.y > this.floorY + 10) this.projectiles.splice(i, 1);
+    }
+  };
+
+  MiniBoss.prototype.hit = function () {
+    if (this.defeated) return false;
+    this.hp--;
+    this.flash = 8;
+    Game.audio.play('enemyHit');
+    if (this.hp <= 0) {
+      this.defeated = true;
+      this.defeatTimer = 0;
+      this.projectiles = [];
+      Game.audio.play('enemyDefeat');
+      return true;
+    }
+    return false;
+  };
+
+  MiniBoss.prototype.draw = function (c, camX, camY) {
+    if (!this.active) return;
+    if (this.flash > 0 && this.flash % 2 === 0) {
+      this.drawProjectiles(c, camX, camY);
+      return;
+    }
+    var sx = Math.round(this.x - camX);
+    var sy = Math.round(this.y - camY);
+    c.save();
+    if (this.defeated) c.globalAlpha = Math.max(0, 1 - this.defeatTimer / 120);
+    if (this.species === 'kingCrab') drawKingCrab(c, sx, sy, this);
+    else drawGiantOctopus(c, sx, sy, this);
+    c.restore();
+    this.drawProjectiles(c, camX, camY);
+  };
+
+  function drawGiantOctopus(c, sx, sy, b) {
+    var tp = b.tentaclePhase;
+    var lunging = b.mode === 'lunge';
+    c.save();
+    /* Inky aura */
+    var acx = sx + 42, acy = sy + 40;
+    var ar = 70 + Math.sin(b.timer * 0.07) * 5;
+    var ag = c.createRadialGradient(acx, acy, 10, acx, acy, ar);
+    ag.addColorStop(0, 'rgba(90, 30, 140, 0.35)');
+    ag.addColorStop(1, 'rgba(60, 10, 90, 0)');
+    c.fillStyle = ag;
+    c.fillRect(acx - ar, acy - ar, ar * 2, ar * 2);
+
+    c.translate(sx, sy);
+    if (b.facing === 1) { c.translate(84, 0); c.scale(-1, 1); }
+    c.lineCap = 'round';
+    /* Eight tentacles fanning out and down, far ones darker; they trail
+       behind when lunging */
+    for (var i = 0; i < 8; i++) {
+      var far = i % 2 === 1;
+      var baseX = 14 + i * 8;
+      var spread = (i - 3.5) * 7;
+      var w1 = Math.sin(tp + i * 0.8) * 10;
+      var w2 = Math.cos(tp * 1.3 + i * 0.5) * 8;
+      var drag = lunging ? -b.vx * 2 : 0;
+      var x0 = baseX, y0 = 56;
+      var x1 = baseX + spread * 0.6 + w1 + drag, y1 = 68;
+      var x2 = baseX + spread + w2 * 0.6 + drag * 1.5, y2 = 80 - (lunging ? b.vy * 2 : 0);
+      var x3 = baseX + spread * 1.4 + w1 * 0.5 + drag * 2, y3 = 90 + Math.sin(tp + i) * 3;
+      c.strokeStyle = far ? '#5a2384' : '#8f44c8';
+      c.lineWidth = far ? 7 : 9;
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.bezierCurveTo(x1, y1, x2, y2, x3, y3);
+      c.stroke();
+      c.strokeStyle = far ? '#6e3099' : '#b06ae0';
+      c.lineWidth = far ? 3 : 4;
+      c.beginPath();
+      c.moveTo(x0, y0 - 1);
+      c.bezierCurveTo(x1, y1 - 1, x2, y2 - 1, x3, y3 - 1);
+      c.stroke();
+      if (!far) {
+        c.fillStyle = '#efc8ff';
+        for (var s = 1; s <= 3; s++) {
+          var t = s * 0.27, mt = 1 - t;
+          var bx = mt * mt * mt * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t * t * t * x3;
+          var by = mt * mt * mt * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t * t * t * y3;
+          c.beginPath(); c.arc(bx + 2, by + 1, 1.6, 0, Math.PI * 2); c.fill();
+        }
+      }
+    }
+    /* Mantle */
+    var g = c.createRadialGradient(28, 18, 4, 42, 34, 46);
+    g.addColorStop(0, '#dfb0ff');
+    g.addColorStop(0.5, '#a85be0');
+    g.addColorStop(1, '#5a2184');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(4, 44);
+    c.bezierCurveTo(0, 10, 24, -2, 42, 0);
+    c.bezierCurveTo(60, -2, 86, 10, 80, 44);
+    c.quadraticCurveTo(76, 60, 42, 62);
+    c.quadraticCurveTo(8, 60, 4, 44);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = 'rgba(40, 10, 60, 0.5)';
+    c.lineWidth = 1.5;
+    c.stroke();
+    /* Lighter face plate */
+    c.fillStyle = 'rgba(245, 215, 255, 0.35)';
+    c.beginPath(); c.ellipse(42, 50, 28, 9, 0, 0, Math.PI * 2); c.fill();
+    /* Speckles */
+    c.fillStyle = 'rgba(70, 15, 110, 0.4)';
+    var spots = [[16, 20, 4], [30, 8, 3], [56, 6, 3.4], [68, 22, 4.2], [48, 16, 2.4], [22, 34, 2.6], [64, 36, 2.8]];
+    for (var sp = 0; sp < spots.length; sp++) {
+      c.beginPath(); c.arc(spots[sp][0], spots[sp][1], spots[sp][2], 0, Math.PI * 2); c.fill();
+    }
+    /* Highlight */
+    c.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    c.beginPath(); c.ellipse(26, 14, 10, 5, -0.6, 0, Math.PI * 2); c.fill();
+    /* Eyes – big, with angry brows and red-rimmed irises */
+    var eyes = [[28, 38], [58, 38]];
+    for (var e = 0; e < 2; e++) {
+      var ex = eyes[e][0], ey = eyes[e][1];
+      c.fillStyle = '#fff6ff';
+      c.beginPath(); c.arc(ex, ey, 9.5, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = 'rgba(60, 10, 80, 0.5)';
+      c.lineWidth = 1.2;
+      c.stroke();
+      c.fillStyle = '#d8b030';
+      c.beginPath(); c.arc(ex + (b.facing === 1 ? -1.5 : 1.5), ey + 1, 5.2, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#1a0a22';
+      c.beginPath(); c.ellipse(ex + 1.5, ey + 1, 2.6, 4, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ffffff';
+      c.beginPath(); c.arc(ex - 2, ey - 3, 2, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#2a0a3a';
+      c.lineWidth = 3.5;
+      c.beginPath();
+      c.moveTo(ex - 9, ey - 12 + (e === 0 ? 0 : 5));
+      c.lineTo(ex + 9, ey - 12 + (e === 0 ? 5 : 0));
+      c.stroke();
+    }
+    /* Beak */
+    c.fillStyle = '#2a0a3a';
+    c.beginPath(); c.moveTo(36, 54); c.lineTo(48, 54); c.lineTo(42, 61); c.closePath(); c.fill();
+    c.fillStyle = '#4a1a5a';
+    c.beginPath(); c.moveTo(38, 54); c.lineTo(46, 54); c.lineTo(42, 58); c.closePath(); c.fill();
+    c.restore();
+  }
+
+  function drawKingCrab(c, sx, sy, b) {
+    c.save();
+    c.translate(sx, sy);
+    if (b.facing === 1) { c.translate(96, 0); c.scale(-1, 1); }
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    var cx = 48, cy = 36;
+    /* Shadow on the sand */
+    c.fillStyle = 'rgba(4, 14, 26, 0.4)';
+    c.beginPath(); c.ellipse(cx, 62, 48, 6, 0, 0, Math.PI * 2); c.fill();
+    /* Legs – three per side, two segments, animated with legPhase */
+    for (var side = -1; side <= 1; side += 2) {
+      for (var l = 0; l < 3; l++) {
+        var ph = b.legPhase + l * 1.1 + (side > 0 ? Math.PI / 2 : 0);
+        var lift = Math.max(0, Math.sin(ph)) * 5;
+        var hipX = cx + side * (16 + l * 9), hipY = cy + 10;
+        var kneeX = hipX + side * (14 + l * 3), kneeY = hipY - 2 - lift;
+        var footX = kneeX + side * (6 + l * 2) + Math.cos(ph) * 3, footY = 58 - lift;
+        c.strokeStyle = '#8a2a14';
+        c.lineWidth = 5;
+        c.beginPath(); c.moveTo(hipX, hipY); c.lineTo(kneeX, kneeY); c.lineTo(footX, footY); c.stroke();
+        c.strokeStyle = '#e8603a';
+        c.lineWidth = 2.2;
+        c.beginPath(); c.moveTo(hipX, hipY - 1); c.lineTo(kneeX, kneeY - 1); c.lineTo(footX, footY - 1); c.stroke();
+        c.fillStyle = '#3a0e08';
+        c.beginPath(); c.moveTo(footX - 2, footY); c.lineTo(footX + 2, footY); c.lineTo(footX + side, footY + 4); c.closePath(); c.fill();
+      }
+    }
+    /* Carapace – wide dome with spikes along the back */
+    var g = c.createRadialGradient(cx - 14, cy - 12, 4, cx, cy, 46);
+    g.addColorStop(0, '#ffb07a');
+    g.addColorStop(0.45, '#ec6a3a');
+    g.addColorStop(1, '#8a2410');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(cx - 42, cy + 8);
+    c.quadraticCurveTo(cx - 44, cy - 20, cx, cy - 24);
+    c.quadraticCurveTo(cx + 44, cy - 20, cx + 42, cy + 8);
+    c.quadraticCurveTo(cx, cy + 26, cx - 42, cy + 8);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = 'rgba(70, 15, 5, 0.6)';
+    c.lineWidth = 1.5;
+    c.stroke();
+    /* Spikes */
+    c.fillStyle = '#ffd0a8';
+    var spikes = [[-34, -4], [-24, -14], [-12, -20], [12, -20], [24, -14], [34, -4]];
+    for (var s = 0; s < spikes.length; s++) {
+      var spx = cx + spikes[s][0], spy = cy + spikes[s][1];
+      c.beginPath(); c.moveTo(spx - 4, spy + 3); c.lineTo(spx, spy - 6); c.lineTo(spx + 4, spy + 3); c.closePath(); c.fill();
+    }
+    /* Shell texture bumps and a bright rim */
+    c.fillStyle = 'rgba(255, 220, 190, 0.25)';
+    var bumps = [[-20, -2], [-6, -8], [10, -6], [22, 0], [0, 6], [-14, 8], [16, 10]];
+    for (var bb = 0; bb < bumps.length; bb++) {
+      c.beginPath(); c.arc(cx + bumps[bb][0], cy + bumps[bb][1], 3, 0, Math.PI * 2); c.fill();
+    }
+    c.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    c.beginPath(); c.ellipse(cx - 18, cy - 12, 12, 4.5, -0.3, 0, Math.PI * 2); c.fill();
+    /* Underside plate */
+    c.fillStyle = '#c84a24';
+    c.beginPath(); c.ellipse(cx, cy + 14, 30, 7, 0, 0, Math.PI); c.fill();
+    /* Claws – the near claw snaps; arm then two pincer halves */
+    var snap = Math.max(0, Math.sin(b.timer * 0.12)) * 0.5;
+    for (var k = -1; k <= 1; k += 2) {
+      var armX = cx + k * 40, armY = cy + 2;
+      var clawX = cx + k * 58, clawY = cy - 4;
+      c.strokeStyle = '#a4321a';
+      c.lineWidth = 8;
+      c.beginPath(); c.moveTo(armX, armY); c.quadraticCurveTo(cx + k * 52, cy + 12, clawX, clawY + 6); c.stroke();
+      c.strokeStyle = '#f07a4a';
+      c.lineWidth = 3;
+      c.beginPath(); c.moveTo(armX, armY - 1); c.quadraticCurveTo(cx + k * 52, cy + 10, clawX, clawY + 4); c.stroke();
+      c.save();
+      c.translate(clawX, clawY + 4);
+      if (k === 1) c.scale(-1, 1);
+      var open = k === -1 ? snap : snap * 0.4;
+      var cg = c.createLinearGradient(0, -14, 0, 10);
+      cg.addColorStop(0, '#ff9a6a');
+      cg.addColorStop(1, '#a4321a');
+      c.fillStyle = cg;
+      /* Fixed lower finger */
+      c.beginPath();
+      c.moveTo(6, 2);
+      c.quadraticCurveTo(-4, 8, -16, 4);
+      c.quadraticCurveTo(-18, 10, -10, 12);
+      c.quadraticCurveTo(0, 12, 8, 8);
+      c.closePath();
+      c.fill();
+      /* Moving upper finger */
+      c.save();
+      c.rotate(-open);
+      c.beginPath();
+      c.moveTo(6, 2);
+      c.quadraticCurveTo(-4, -6, -16, -2);
+      c.quadraticCurveTo(-18, -10, -8, -12);
+      c.quadraticCurveTo(4, -12, 8, -4);
+      c.closePath();
+      c.fill();
+      c.restore();
+      /* Palm */
+      c.beginPath(); c.ellipse(6, 0, 9, 10, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = 'rgba(70, 15, 5, 0.55)';
+      c.lineWidth = 1.2;
+      c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.3)';
+      c.beginPath(); c.ellipse(4, -4, 4, 2, -0.5, 0, Math.PI * 2); c.fill();
+      c.restore();
+    }
+    /* Eye stalks with grumpy eyes */
+    for (var e = -1; e <= 1; e += 2) {
+      var stX = cx + e * 9, topY = cy - 32 + Math.sin(b.timer * 0.05 + e) * 1.5;
+      c.strokeStyle = '#a4321a';
+      c.lineWidth = 4;
+      c.beginPath(); c.moveTo(cx + e * 7, cy - 20); c.lineTo(stX, topY); c.stroke();
+      c.fillStyle = '#ffffff';
+      c.beginPath(); c.arc(stX, topY - 2, 5.5, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#1a0a08';
+      c.beginPath(); c.arc(stX - 1.5, topY - 1, 2.6, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ffffff';
+      c.beginPath(); c.arc(stX - 2.5, topY - 3, 1, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#3a0e08';
+      c.lineWidth = 2.4;
+      c.beginPath(); c.moveTo(stX - 6, topY - 9 + (e === -1 ? 0 : 3)); c.lineTo(stX + 6, topY - 9 + (e === -1 ? 3 : 0)); c.stroke();
+    }
+    /* Mouth – zigzag */
+    c.strokeStyle = '#3a0e08';
+    c.lineWidth = 1.6;
+    c.beginPath();
+    c.moveTo(cx - 8, cy + 4);
+    for (var m = 0; m < 4; m++) c.lineTo(cx - 8 + (m + 1) * 4, cy + 4 + (m % 2 ? 0 : 3));
+    c.stroke();
+    /* Crown – he is the king, after all */
+    c.fillStyle = '#ffcc33';
+    c.beginPath();
+    c.moveTo(cx - 12, cy - 22);
+    c.lineTo(cx - 10, cy - 34);
+    c.lineTo(cx - 5, cy - 27);
+    c.lineTo(cx, cy - 37);
+    c.lineTo(cx + 5, cy - 27);
+    c.lineTo(cx + 10, cy - 34);
+    c.lineTo(cx + 12, cy - 22);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = '#8a5a10';
+    c.lineWidth = 1;
+    c.stroke();
+    c.fillStyle = '#ff3366';
+    c.beginPath(); c.arc(cx, cy - 25, 2, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#44ccff';
+    c.beginPath(); c.arc(cx - 7, cy - 25, 1.4, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(cx + 7, cy - 25, 1.4, 0, Math.PI * 2); c.fill();
+    c.restore();
+  }
+
+  MiniBoss.prototype.drawProjectiles = function (c, camX, camY) {
+    c.save();
+    for (var i = 0; i < this.projectiles.length; i++) {
+      var p = this.projectiles[i];
+      var px = p.x - camX, py = p.y - camY;
+      if (p.kind === 'shell') {
+        c.save();
+        c.translate(px, py);
+        c.rotate(p.spin);
+        var sg = c.createLinearGradient(0, -6, 0, 6);
+        sg.addColorStop(0, '#fff0d8');
+        sg.addColorStop(1, '#d4915c');
+        c.fillStyle = sg;
+        c.beginPath(); c.arc(0, 1, 6, Math.PI, 0); c.lineTo(2, 5); c.lineTo(-2, 5); c.closePath(); c.fill();
+        c.strokeStyle = 'rgba(120, 70, 40, 0.6)';
+        c.lineWidth = 1;
+        c.stroke();
+        c.beginPath();
+        for (var r = -2; r <= 2; r++) { c.moveTo(0, 4); c.lineTo(r * 2.4, -3.5 + Math.abs(r)); }
+        c.stroke();
+        c.restore();
+      } else {
+        /* Ink blob with a trailing drip and a purple sheen */
+        c.fillStyle = 'rgba(20, 10, 40, 0.55)';
+        c.beginPath(); c.arc(px - p.vx * 2.5, py - p.vy * 2.5, p.r * 0.6, 0, Math.PI * 2); c.fill();
+        var ig = c.createRadialGradient(px - 2, py - 2, 1, px, py, p.r);
+        ig.addColorStop(0, '#6a4aa0');
+        ig.addColorStop(1, '#120826');
+        c.fillStyle = ig;
+        c.beginPath();
+        c.arc(px, py, p.r, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = 'rgba(255,255,255,0.35)';
+        c.beginPath(); c.arc(px - p.r * 0.35, py - p.r * 0.35, p.r * 0.25, 0, Math.PI * 2); c.fill();
+      }
+    }
+    c.restore();
+  };
+
+  MiniBoss.prototype.drawHealthBar = function (c) {
+    if (!this.active || this.defeated) return;
+    drawBossBar(c, this.hp, this.maxHp, Game.i18n.t(this.hpKey), BOSS_BAR_PALETTES[this.species] || BOSS_BAR_PALETTES.moni);
+  };
+
   /* ========== EXPORTS ========== */
   window.Game.entities = {
     Momoko: Momoko,
@@ -2961,6 +4165,13 @@
     Crab: Crab,
     Wolfe: Wolfe,
     HeartPickup: HeartPickup,
+    Pearl: Pearl,
+    Chest: Chest,
+    Jellyfish: Jellyfish,
+    Eel: Eel,
+    Shark: Shark,
+    MiniBoss: MiniBoss,
+    getPearlSprite: getPearlSprite,
     Particle: Particle,
     AmbientBubble: AmbientBubble,
     spawnBurst: spawnBurst,

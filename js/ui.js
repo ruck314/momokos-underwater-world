@@ -621,7 +621,7 @@
   }
 
   /* ---- HUD ---- */
-  function drawHUD(c, player) {
+  function drawHUD(c, player, pearls, pearlTotal) {
     /* Hearts on a soft plate so sprites drifting past never swallow them */
     c.fillStyle = 'rgba(4, 18, 40, 0.55)';
     roundRect(c, 3, 5, player.maxHealth * 28 + 2, 28, 14);
@@ -648,6 +648,32 @@
         c.fillStyle = '#4a3550';
         drawHeart(c, hx, hy, 10);
       }
+    }
+
+    /* Pearl counter beside the hearts: icon plus "12/30" */
+    if (pearlTotal) {
+      var text = pearls + '/' + pearlTotal;
+      c.save();
+      c.font = 'bold 15px ' + FONT;
+      var tw = c.measureText(text).width;
+      var px = 3 + player.maxHealth * 28 + 2 + 8;
+      var pw = tw + 36;
+      c.fillStyle = 'rgba(4, 18, 40, 0.55)';
+      roundRect(c, px, 5, pw, 28, 14);
+      c.fill();
+      c.strokeStyle = 'rgba(124, 232, 255, 0.35)';
+      c.lineWidth = 1;
+      c.stroke();
+      drawPearlIcon(c, px + 15, 19, 8);
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.lineJoin = 'round';
+      c.lineWidth = 3;
+      c.strokeStyle = 'rgba(30, 6, 18, 0.85)';
+      c.strokeText(text, px + 29, 20);
+      c.fillStyle = '#ffffff';
+      c.fillText(text, px + 29, 20);
+      c.restore();
     }
 
     /* Version stamp (bottom-right) – matches the title screen so the
@@ -732,7 +758,7 @@
     drawButton(c, Game.i18n.t('language') + ': ' + Game.i18n.t('langLabel'), W / 2 - 10, 230, 220, 44);
     var muteLabel = Game.i18n.t(Game.audio.isMuted() ? 'soundOff' : 'soundOn');
     drawButton(c, muteLabel, W / 2 - 10, 290, 220, 44);
-    drawButton(c, Game.i18n.t('quit'), W / 2 - 10, 350, 220, 44);
+    drawButton(c, Game.i18n.t('levelSelect'), W / 2 - 10, 350, 220, 44);
 
     /* Version stamp – matches the title-screen stamp so we can tell at a
        glance which build is paused (handy for bug reports). */
@@ -1110,16 +1136,23 @@
     c.fillStyle = '#ffffff';
     c.fillText(Game.i18n.t('thanks'), W / 2, 158);
 
-    drawButton(c, Game.i18n.t('playAgain'), W / 2 - 100, 394, 200, 48, false, 'primary');
+    drawButton(c, Game.i18n.t('levelSelect'), W / 2 - 210, 394, 200, 48);
+    drawButton(c, Game.i18n.t('playAgain'), W / 2 + 10, 394, 200, 48, false, 'primary');
     c.restore();
   }
 
   function handleVictoryClick(mx, my) {
-    if (hitButton(mx, my, W / 2 - 100, 394, 200, 48)) {
+    if (hitButton(mx, my, W / 2 + 10, 394, 200, 48)) {
       Game.audio.play('select');
       victoryParticles = [];
       victoryTimer = 0;
       return 'restart';
+    }
+    if (hitButton(mx, my, W / 2 - 210, 394, 200, 48)) {
+      Game.audio.play('select');
+      victoryParticles = [];
+      victoryTimer = 0;
+      return 'select';
     }
     return null;
   }
@@ -2841,6 +2874,515 @@
     return null;
   }
 
+  /* ---- Shared bits for the progression screens ---- */
+
+  /* Five-point star; lit ones are gold with a dark rim, empty ones are a
+     dim outline so the missing stars still show what's possible. */
+  function drawStar(c, cx, cy, r, lit, scale) {
+    scale = scale || 1;
+    c.save();
+    c.translate(cx, cy);
+    c.scale(scale, scale);
+    c.beginPath();
+    for (var i = 0; i < 10; i++) {
+      var a = -Math.PI / 2 + i * Math.PI / 5;
+      var rr = i % 2 === 0 ? r : r * 0.46;
+      if (i === 0) c.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      else c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    c.closePath();
+    c.lineJoin = 'round';
+    if (lit) {
+      var g = c.createLinearGradient(0, -r, 0, r);
+      g.addColorStop(0, '#fff3a0');
+      g.addColorStop(0.5, '#ffd24a');
+      g.addColorStop(1, '#e08a10');
+      c.fillStyle = g;
+      c.fill();
+      c.strokeStyle = '#7a4400';
+      c.lineWidth = Math.max(1.2, r * 0.12);
+      c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.75)';
+      c.beginPath();
+      c.ellipse(-r * 0.25, -r * 0.3, r * 0.2, r * 0.12, -0.6, 0, Math.PI * 2);
+      c.fill();
+    } else {
+      c.fillStyle = 'rgba(10, 30, 60, 0.45)';
+      c.fill();
+      c.strokeStyle = 'rgba(160, 200, 230, 0.5)';
+      c.lineWidth = Math.max(1, r * 0.1);
+      c.stroke();
+    }
+    c.restore();
+  }
+
+  function drawPearlIcon(c, cx, cy, r) {
+    var spr = Game.entities && Game.entities.getPearlSprite ? Game.entities.getPearlSprite() : null;
+    if (spr) {
+      var s = (r * 2) / 15;
+      c.drawImage(spr, cx - 10 * s, cy - 10 * s, 20 * s, 20 * s);
+    } else {
+      c.fillStyle = '#fff0f6';
+      c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fill();
+    }
+  }
+
+  /* Outlined count text like "12 / 30" next to a pearl icon */
+  function drawPearlCount(c, cx, cy, got, total, size) {
+    var text = got + ' / ' + total;
+    c.save();
+    c.font = 'bold ' + size + 'px ' + FONT;
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    var tw = c.measureText(text).width;
+    var r = size * 0.55;
+    var startX = cx - (tw + r * 2 + 10) / 2;
+    drawPearlIcon(c, startX + r, cy, r);
+    c.lineJoin = 'round';
+    c.lineWidth = Math.max(3, size * 0.18);
+    c.strokeStyle = 'rgba(6, 30, 60, 0.9)';
+    c.strokeText(text, startX + r * 2 + 10, cy + 1);
+    c.fillStyle = '#ffffff';
+    c.fillText(text, startX + r * 2 + 10, cy + 1);
+    c.restore();
+  }
+
+  /* Padlock for locked level cards */
+  function drawPadlock(c, cx, cy, s) {
+    c.save();
+    c.translate(cx, cy);
+    c.lineCap = 'round';
+    c.strokeStyle = '#d8dde6';
+    c.lineWidth = 4 * s;
+    c.beginPath();
+    c.arc(0, -8 * s, 9 * s, Math.PI, 0);
+    c.stroke();
+    var g = c.createLinearGradient(0, -6 * s, 0, 14 * s);
+    g.addColorStop(0, '#ffd24a');
+    g.addColorStop(1, '#c0801a');
+    c.fillStyle = g;
+    roundRect(c, -14 * s, -6 * s, 28 * s, 22 * s, 4 * s);
+    c.fill();
+    c.strokeStyle = '#6a4000';
+    c.lineWidth = 1.5 * s;
+    c.stroke();
+    c.fillStyle = '#5a3400';
+    c.beginPath(); c.arc(0, 3 * s, 3 * s, 0, Math.PI * 2); c.fill();
+    c.fillRect(-1.5 * s, 3 * s, 3 * s, 7 * s);
+    c.restore();
+  }
+
+  /* ---- Level Clear ----
+     Shown after a mini-boss falls: the reef's name, stars that pop in one
+     by one, the pearl tally, and Next Level / Level Select buttons. */
+  var levelClearTimer = 0;
+  var levelClearFriend = null;
+  var LC_BTN_Y = 400, LC_BTN_W = 200, LC_BTN_H = 48;
+
+  function resetLevelClear() {
+    levelClearTimer = 0;
+  }
+
+  function drawLevelClear(c, info) {
+    levelClearTimer++;
+    var t = levelClearTimer;
+    info = info || { level: 0, pearls: 0, total: 0, stars: 1, hasNext: true };
+    var lvl = Game.levels.get(info.level);
+
+    c.save();
+    drawSeaBackdrop(c, t, true);
+    drawReefSand(c);
+    drawReefSides(c, t, 448);
+    clipGame(c);
+    drawReefForeground(c, t);
+
+    /* Momoko dancing, Oliver cheering beside her */
+    if (Game.entities && Game.entities.drawMomokoFloss) {
+      c.save();
+      c.translate(150, 318 - Math.abs(Math.sin(t * 0.09)) * 6);
+      c.scale(2.4, 2.4);
+      Game.entities.drawMomokoFloss(c, -14, -17, Game.customization, t * 0.18);
+      c.restore();
+    }
+    if (Game.entities && Game.entities.Oliver) {
+      if (!levelClearFriend) levelClearFriend = new Game.entities.Oliver(0, 0);
+      levelClearFriend.update();
+      c.save();
+      c.translate(640, 300 + Math.sin(t * 0.07) * 4);
+      c.scale(1.8, 1.8);
+      levelClearFriend.draw(c, levelClearFriend.w / 2, levelClearFriend.h / 2);
+      c.restore();
+    }
+
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    /* Heading */
+    var pop = Math.min(1, t / 18);
+    var headScale = 0.6 + 0.4 * (1 - Math.pow(1 - pop, 3));
+    c.save();
+    c.translate(W / 2, 68);
+    c.scale(headScale, headScale);
+    fitFont(c, Game.i18n.t('levelClear'), W - 120, 46, 'bold');
+    c.lineWidth = 8;
+    c.strokeStyle = '#4a1f00';
+    c.strokeText(Game.i18n.t('levelClear'), 0, 0);
+    c.fillStyle = '#ffd24a';
+    c.shadowColor = '#ffaa00';
+    c.shadowBlur = 18;
+    c.fillText(Game.i18n.t('levelClear'), 0, 0);
+    c.restore();
+
+    /* Level name */
+    var name = lvl ? Game.i18n.t(lvl.nameKey) : '';
+    fitFont(c, name, W - 120, 22, 'bold');
+    c.lineWidth = 4;
+    c.strokeStyle = 'rgba(6, 30, 60, 0.85)';
+    c.strokeText(name, W / 2, 116);
+    c.fillStyle = '#bff0ff';
+    c.fillText(name, W / 2, 116);
+
+    /* Stars pop in one at a time with a little overshoot */
+    for (var s = 0; s < 3; s++) {
+      var lit = s < info.stars;
+      var born = 30 + s * 22;
+      var age = t - born;
+      var sc = 1;
+      if (lit) {
+        if (age < 0) sc = 0;
+        else if (age < 14) sc = 1.5 - 0.5 * Math.pow(age / 14, 0.6);
+      }
+      var sy = 178 + (s === 1 ? -8 : 0);
+      if (sc > 0) drawStar(c, W / 2 + (s - 1) * 74, sy, 30, lit, sc);
+    }
+
+    /* Pearl tally */
+    c.font = 'bold 14px ' + FONT;
+    c.lineWidth = 3;
+    c.strokeStyle = 'rgba(6, 30, 60, 0.85)';
+    c.strokeText(Game.i18n.t('pearlsCollected'), W / 2, 236);
+    c.fillStyle = '#dfeeff';
+    c.fillText(Game.i18n.t('pearlsCollected'), W / 2, 236);
+    var shown = Math.min(info.pearls, Math.floor(Math.max(0, t - 40) / 2.5));
+    drawPearlCount(c, W / 2, 268, shown, info.total, 30);
+    if (info.pearls >= info.total && info.total > 0 && t > 120) {
+      fitFont(c, Game.i18n.t('perfectPearls'), W - 200, 16, 'bold');
+      c.lineWidth = 4;
+      c.strokeStyle = 'rgba(80, 30, 0, 0.9)';
+      c.strokeText(Game.i18n.t('perfectPearls'), W / 2, 306 + Math.sin(t * 0.1) * 2);
+      c.fillStyle = '#ffe28a';
+      c.fillText(Game.i18n.t('perfectPearls'), W / 2, 306 + Math.sin(t * 0.1) * 2);
+    }
+
+    /* Buttons */
+    if (info.hasNext) {
+      drawButton(c, Game.i18n.t('levelSelect'), W / 2 - LC_BTN_W - 10, LC_BTN_Y, LC_BTN_W, LC_BTN_H);
+      drawButton(c, Game.i18n.t('nextLevel'), W / 2 + 10, LC_BTN_Y, LC_BTN_W, LC_BTN_H, false, 'primary');
+    } else {
+      drawButton(c, Game.i18n.t('levelSelect'), W / 2 - LC_BTN_W / 2, LC_BTN_Y, LC_BTN_W, LC_BTN_H, false, 'primary');
+    }
+    c.restore();
+    drawVersionStamp(c, 'rgba(255, 255, 255, 0.55)');
+  }
+
+  function handleLevelClearClick(mx, my, info) {
+    var hasNext = !info || info.hasNext;
+    if (hasNext) {
+      if (hitButton(mx, my, W / 2 - LC_BTN_W - 10, LC_BTN_Y, LC_BTN_W, LC_BTN_H)) { Game.audio.play('select'); return 'select'; }
+      if (hitButton(mx, my, W / 2 + 10, LC_BTN_Y, LC_BTN_W, LC_BTN_H)) { Game.audio.play('select'); return 'next'; }
+    } else if (hitButton(mx, my, W / 2 - LC_BTN_W / 2, LC_BTN_Y, LC_BTN_W, LC_BTN_H)) {
+      Game.audio.play('select');
+      return 'select';
+    }
+    return null;
+  }
+
+  /* ---- Level Select ("Choose a Reef") ----
+     Three cards, each with a code-painted thumbnail of its reef, the best
+     star rating and pearl count, and a padlock while it is still locked. */
+  var levelSelectTimer = 0;
+  var lockShake = [0, 0, 0];
+  var CARD_W = 214, CARD_H = 258, CARD_Y = 82, CARD_GAP = 18;
+  var CARD_X0 = Math.round((W - (CARD_W * 3 + CARD_GAP * 2)) / 2);
+  var LS_BACK = { x: W / 2 - 80, y: 404, w: 160, h: 44 };
+  var thumbCache = {};
+
+  function cardX(i) { return CARD_X0 + i * (CARD_W + CARD_GAP); }
+
+  /* Thumbnail painted once per theme into an offscreen canvas */
+  function getThumb(theme) {
+    if (thumbCache[theme]) return thumbCache[theme];
+    var tw = CARD_W - 24, th = 100;
+    var cv = document.createElement('canvas');
+    cv.width = tw * 2; cv.height = th * 2;
+    var c = cv.getContext('2d');
+    c.scale(2, 2);
+    paintThumb(c, theme, tw, th);
+    thumbCache[theme] = cv;
+    return cv;
+  }
+
+  function paintThumb(c, theme, tw, th) {
+    var g = c.createLinearGradient(0, 0, 0, th);
+    var i, d;
+    var dec = Game.engine && Game.engine.drawDecorationAt;
+    if (theme === 'trench') {
+      g.addColorStop(0, '#0a1430');
+      g.addColorStop(1, '#02050d');
+      c.fillStyle = g;
+      c.fillRect(0, 0, tw, th);
+      /* Sand, then glowing plants with halos */
+      c.fillStyle = '#2a2f3c';
+      c.beginPath(); c.moveTo(0, th); c.lineTo(0, th - 12);
+      for (var x = 0; x <= tw; x += 8) c.lineTo(x, th - 12 + Math.sin(x * 0.08) * 2);
+      c.lineTo(tw, th); c.closePath(); c.fill();
+      c.save();
+      c.scale(0.7, 0.7);
+      var plants = [[22, 0], [70, 1], [130, 2], [200, 0], [250, 1]];
+      if (dec) {
+        for (i = 0; i < plants.length; i++) dec(c, { type: 'glowplant', x: plants[i][0] * 13, y: 0, variant: plants[i][1] }, plants[i][0], (th - 10) / 0.7, 1.3);
+        dec(c, { type: 'crystal', x: 500, y: 0 }, 165, (th - 10) / 0.7, 1.3);
+      }
+      c.restore();
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      var cols = ['63,240,216', '255,111,208', '155,123,255', '63,240,216', '255,111,208'];
+      for (i = 0; i < plants.length; i++) {
+        var hx = plants[i][0] * 0.7, hy = th - 10 - (plants[i][1] === 1 ? 44 : 30) * 0.7;
+        var hg = c.createRadialGradient(hx, hy, 2, hx, hy, 26);
+        hg.addColorStop(0, 'rgba(' + cols[i] + ',0.45)');
+        hg.addColorStop(1, 'rgba(' + cols[i] + ',0)');
+        c.fillStyle = hg;
+        c.fillRect(hx - 26, hy - 26, 52, 52);
+      }
+      c.restore();
+      /* A glowing jellyfish and Moni's silhouette with her crown */
+      if (Game.entities && Game.entities.Jellyfish) {
+        var j = new Game.entities.Jellyfish(0, 0, true);
+        j.hue = 300; j.timer = 30;
+        c.save(); c.translate(44, 22); c.scale(0.9, 0.9); j.draw(c, 0, 0); c.restore();
+      }
+      c.fillStyle = 'rgba(70, 20, 100, 0.85)';
+      c.beginPath(); c.ellipse(tw - 42, 40, 9, 9, 0, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.ellipse(tw - 42, 58, 8, 11, 0, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.moveTo(tw - 48, 66); c.quadraticCurveTo(tw - 40, 80, tw - 30, 86); c.lineTo(tw - 42, 84); c.lineTo(tw - 50, 90); c.quadraticCurveTo(tw - 46, 76, tw - 48, 66); c.fill();
+      c.fillStyle = '#ffcc33';
+      c.beginPath(); c.moveTo(tw - 49, 32); c.lineTo(tw - 47, 25); c.lineTo(tw - 44, 29); c.lineTo(tw - 42, 23); c.lineTo(tw - 40, 29); c.lineTo(tw - 37, 25); c.lineTo(tw - 35, 32); c.closePath(); c.fill();
+      c.fillStyle = '#ff4466';
+      c.beginPath(); c.arc(tw - 45, 39, 1.3, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(tw - 39, 39, 1.3, 0, Math.PI * 2); c.fill();
+    } else if (theme === 'wreck') {
+      g.addColorStop(0, '#1a7a90');
+      g.addColorStop(1, '#0b3a4e');
+      c.fillStyle = g;
+      c.fillRect(0, 0, tw, th);
+      c.fillStyle = '#6e5c40';
+      c.beginPath(); c.moveTo(0, th); c.lineTo(0, th - 10);
+      for (var x2 = 0; x2 <= tw; x2 += 8) c.lineTo(x2, th - 10 + Math.sin(x2 * 0.07) * 2);
+      c.lineTo(tw, th); c.closePath(); c.fill();
+      if (dec) {
+        c.save();
+        c.scale(0.42, 0.42);
+        dec(c, { type: 'wreck', x: 2180, y: 0, w: 300, h: 150 }, 20, (th - 8) / 0.42, 1);
+        dec(c, { type: 'mast', x: 2480, y: 0, h: 150 }, 160, (th - 8) / 0.42 - 60, 1);
+        c.restore();
+        c.save();
+        c.scale(0.5, 0.5);
+        dec(c, { type: 'tallkelp', x: 80, y: 0, h: 150 }, 16, (th - 8) / 0.5, 1.2);
+        dec(c, { type: 'tallkelp', x: 150, y: 0, h: 120 }, 44, (th - 8) / 0.5, 2.1);
+        dec(c, { type: 'tallkelp', x: 900, y: 0, h: 140 }, (tw - 14) / 0.5, (th - 8) / 0.5, 0.4);
+        dec(c, { type: 'barrel', x: 1100, y: 0 }, (tw - 60) / 0.5, (th - 8) / 0.5, 0);
+        c.restore();
+      }
+      if (Game.entities && Game.entities.Chest) {
+        var ch = new Game.entities.Chest(0, 0, 3);
+        c.save(); c.translate(tw - 46, th - 30); c.scale(0.7, 0.7); ch.draw(c, 0, 0); c.restore();
+      }
+    } else {
+      g.addColorStop(0, '#2a8ad0');
+      g.addColorStop(1, '#0f3d6e');
+      c.fillStyle = g;
+      c.fillRect(0, 0, tw, th);
+      /* Sun rays */
+      c.fillStyle = 'rgba(190, 240, 255, 0.14)';
+      for (i = 0; i < 4; i++) {
+        c.beginPath(); c.moveTo(20 + i * 48, 0); c.lineTo(36 + i * 48, 0); c.lineTo(60 + i * 48, th); c.lineTo(30 + i * 48, th); c.closePath(); c.fill();
+      }
+      c.fillStyle = '#b39a6e';
+      c.beginPath(); c.moveTo(0, th); c.lineTo(0, th - 10);
+      for (var x3 = 0; x3 <= tw; x3 += 8) c.lineTo(x3, th - 10 + Math.sin(x3 * 0.07) * 2);
+      c.lineTo(tw, th); c.closePath(); c.fill();
+      if (Game.engine && Game.engine.drawCoral) {
+        var corals = [[18, 0], [52, 1], [118, 2], [160, 0]];
+        for (i = 0; i < corals.length; i++) {
+          c.save(); c.translate(corals[i][0], th - 12); c.scale(0.9, 0.9); Game.engine.drawCoral(c, 0, 0, corals[i][1], corals[i][0] * 7); c.restore();
+        }
+      }
+      if (dec) {
+        dec(c, { type: 'seaweed', x: 80, y: 0, h: 40 }, 86, th - 10, 1);
+        dec(c, { type: 'seaweed', x: 300, y: 0, h: 30 }, 140, th - 10, 2);
+      }
+      if (Game.entities && Game.entities.Fish) {
+        var f = new Game.entities.Fish(0, 0, 'sine', -1, 'clownfish');
+        f.timer = 10;
+        c.save(); c.translate(tw - 60, 26); c.scale(1.1, 1.1); f.draw(c, 0, 0); c.restore();
+        var f2 = new Game.entities.Fish(0, 0, 'sine', 1, 'angelfish');
+        c.save(); c.translate(30, 40); f2.draw(c, 0, 0); c.restore();
+      }
+      if (Game.entities && Game.entities.getPearlSprite) {
+        c.drawImage(Game.entities.getPearlSprite(), tw / 2 - 10, 50);
+      }
+    }
+    /* Water sheen along the top */
+    var sh = c.createLinearGradient(0, 0, 0, 30);
+    sh.addColorStop(0, 'rgba(255,255,255,0.14)');
+    sh.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = sh;
+    c.fillRect(0, 0, tw, 30);
+  }
+
+  function drawLevelSelect(c) {
+    levelSelectTimer++;
+    var t = levelSelectTimer;
+    var prog = Game.progress || { unlocked: 1, best: {} };
+    c.save();
+    drawSeaBackdrop(c, t);
+    drawFloorBelow(c, t);
+    clipGame(c);
+
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    drawHeading(c, Game.i18n.t('chooseReef'), W / 2, 44, 34, '#ffd27a');
+
+    var n = Game.levels.count();
+    for (var i = 0; i < n; i++) {
+      var lvl = Game.levels.get(i);
+      var unlocked = i < prog.unlocked;
+      var best = prog.best[i];
+      var x = cardX(i), y = CARD_Y;
+      if (lockShake[i] > 0) { lockShake[i]--; x += Math.sin(lockShake[i] * 1.2) * 4; }
+      var hover = unlocked && pointerOver(c, x, y, CARD_W, CARD_H);
+      if (hover) y -= 3;
+
+      /* Card */
+      c.save();
+      c.shadowColor = 'rgba(0, 0, 0, 0.4)';
+      c.shadowBlur = 14;
+      c.shadowOffsetY = 4;
+      var pg = c.createLinearGradient(0, y, 0, y + CARD_H);
+      pg.addColorStop(0, hover ? 'rgba(30, 90, 150, 0.95)' : 'rgba(18, 62, 108, 0.92)');
+      pg.addColorStop(1, 'rgba(6, 22, 50, 0.95)');
+      c.fillStyle = pg;
+      roundRect(c, x, y, CARD_W, CARD_H, 14);
+      c.fill();
+      c.restore();
+      c.strokeStyle = hover ? '#ffffff' : 'rgba(124, 232, 255, 0.75)';
+      c.lineWidth = 2;
+      roundRect(c, x, y, CARD_W, CARD_H, 14);
+      c.stroke();
+
+      /* Thumbnail */
+      var thumb = getThumb(lvl.theme);
+      c.save();
+      roundRect(c, x + 12, y + 12, CARD_W - 24, 100, 8);
+      c.clip();
+      c.drawImage(thumb, x + 12, y + 12, CARD_W - 24, 100);
+      c.restore();
+      c.strokeStyle = 'rgba(255,255,255,0.25)';
+      c.lineWidth = 1;
+      roundRect(c, x + 12, y + 12, CARD_W - 24, 100, 8);
+      c.stroke();
+
+      /* Level number badge */
+      c.fillStyle = '#ffd24a';
+      c.beginPath(); c.arc(x + 26, y + 26, 12, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#7a4400';
+      c.lineWidth = 1.5;
+      c.stroke();
+      c.fillStyle = '#4a2200';
+      c.font = 'bold 14px ' + FONT;
+      c.fillText(String(i + 1), x + 26, y + 27);
+
+      /* Name */
+      var name = Game.i18n.t(lvl.nameKey);
+      c.fillStyle = '#ffffff';
+      fitFont(c, name, CARD_W - 24, 19, 'bold');
+      c.fillText(name, x + CARD_W / 2, y + 134);
+
+      if (unlocked) {
+        /* Stars */
+        var stars = best ? best.stars : 0;
+        for (var s = 0; s < 3; s++) drawStar(c, x + CARD_W / 2 + (s - 1) * 30, y + 164, 11, s < stars);
+
+        /* Best pearls */
+        c.font = '13px ' + FONT;
+        c.fillStyle = '#bfe4ff';
+        var total = best ? best.total : countPearls(lvl);
+        var bestTxt = Game.i18n.t('best') + ': ' + (best ? best.pearls : 0) + ' / ' + total;
+        drawPearlIcon(c, x + CARD_W / 2 - c.measureText(bestTxt).width / 2 - 10, y + 190, 6);
+        c.fillText(bestTxt, x + CARD_W / 2 + 8, y + 191);
+
+        /* Hint */
+        c.font = '12px ' + FONT;
+        c.fillStyle = '#9fc8e8';
+        var lines = layoutLines(c, Game.i18n.t('levelHint' + (i + 1)), CARD_W - 28);
+        for (var ln = 0; ln < Math.min(lines.length, 3); ln++) {
+          c.fillText(lines[ln], x + CARD_W / 2, y + 214 + ln * 15);
+        }
+      } else {
+        /* Locked: dim the card, padlock over the thumbnail, and only the
+           unlock hint below the name so nothing overlaps */
+        c.fillStyle = 'rgba(4, 12, 30, 0.62)';
+        roundRect(c, x, y, CARD_W, CARD_H, 14);
+        c.fill();
+        drawPadlock(c, x + CARD_W / 2, y + 60, 1.5);
+        c.fillStyle = '#ffffff';
+        fitFont(c, Game.i18n.t('locked'), CARD_W - 24, 17, 'bold');
+        c.lineJoin = 'round';
+        c.lineWidth = 3;
+        c.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        c.strokeText(Game.i18n.t('locked'), x + CARD_W / 2, y + 170);
+        c.fillText(Game.i18n.t('locked'), x + CARD_W / 2, y + 170);
+        c.font = '13px ' + FONT;
+        c.fillStyle = '#cfe4ff';
+        var ul = layoutLines(c, Game.i18n.t('clearToUnlock'), CARD_W - 28);
+        for (var u = 0; u < ul.length; u++) c.fillText(ul[u], x + CARD_W / 2, y + 198 + u * 16);
+      }
+    }
+
+    drawButton(c, Game.i18n.t('backToTitle'), LS_BACK.x, LS_BACK.y, LS_BACK.w, LS_BACK.h);
+    c.restore();
+    drawVersionStamp(c, 'rgba(255, 255, 255, 0.55)');
+  }
+
+  function countPearls(lvl) {
+    var n = 0, i;
+    for (i = 0; i < lvl.spawns.pickups.length; i++) if (lvl.spawns.pickups[i].type === 'pearl') n++;
+    var ch = lvl.spawns.chests || [];
+    for (i = 0; i < ch.length; i++) n += ch[i].pearls || 4;
+    return n;
+  }
+
+  function handleLevelSelectClick(mx, my) {
+    var prog = Game.progress || { unlocked: 1 };
+    for (var i = 0; i < Game.levels.count(); i++) {
+      if (hitButton(mx, my, cardX(i), CARD_Y, CARD_W, CARD_H)) {
+        if (i < prog.unlocked) {
+          Game.audio.play('select');
+          return { action: 'level', index: i };
+        }
+        lockShake[i] = 24;
+        Game.audio.play('enemyHit');
+        return null;
+      }
+    }
+    if (hitButton(mx, my, LS_BACK.x, LS_BACK.y, LS_BACK.w, LS_BACK.h)) {
+      Game.audio.play('select');
+      return { action: 'title' };
+    }
+    return null;
+  }
+
   /* Canvas text doesn't trigger web-font downloads reliably (Safari), so
      ask for every weight we draw with, covering all game text. */
   if (document.fonts && document.fonts.load) {
@@ -2884,6 +3426,11 @@
     handleCustomizeClick: handleCustomizeClick,
     handleIntroClick: handleIntroClick,
     handleBeachClick: handleBeachClick,
+    drawLevelClear: drawLevelClear,
+    resetLevelClear: resetLevelClear,
+    handleLevelClearClick: handleLevelClearClick,
+    drawLevelSelect: drawLevelSelect,
+    handleLevelSelectClick: handleLevelSelectClick,
     isShowingInstructions: function () { return showInstructions; },
   };
 })();
