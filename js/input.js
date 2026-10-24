@@ -346,51 +346,30 @@
     c.fillRect(x, y, w, h);
   }
 
-  /* Round touch button with a drop shadow, a top-lit radial fill and a
-     soft gloss cap, so the controls read as pressable rather than flat
-     discs. Pressed buttons sink 2px and lose the shadow. */
-  function paintRoundButton(c, b, top, bot, edge) {
-    var oy = b.active ? 2 : 0;
-    if (!b.active) {
-      c.fillStyle = 'rgba(0, 0, 0, 0.35)';
-      c.beginPath();
-      c.arc(b.x, b.y + 4, b.r, 0, Math.PI * 2);
-      c.fill();
-    }
-    var g = c.createRadialGradient(b.x - b.r * 0.3, b.y + oy - b.r * 0.4, b.r * 0.1, b.x, b.y + oy, b.r);
-    g.addColorStop(0, top);
-    g.addColorStop(1, bot);
-    c.fillStyle = g;
-    c.beginPath();
-    c.arc(b.x, b.y + oy, b.r, 0, Math.PI * 2);
-    c.fill();
-    c.strokeStyle = edge;
-    c.lineWidth = 2;
-    c.stroke();
-    c.fillStyle = 'rgba(255, 255, 255, 0.10)';
-    c.beginPath();
-    c.ellipse(b.x, b.y + oy - b.r * 0.5, b.r * 0.55, b.r * 0.26, 0, 0, Math.PI * 2);
-    c.fill();
-    return oy;
-  }
-
   function drawTouchButtons(c) {
     if (!isTouchDevice) return;
     c.save();
     c.globalAlpha = 0.9;
 
-    /* D-pad buttons */
+    /* Flat discs with a 2px rim, drawn exactly like Momoko Treehouse so
+       the controls look and measure the same across all the Momoko
+       games; only the colours are this game's own. */
     var btns = ['up', 'down', 'left', 'right'];
     var arrows = ['\u25B2', '\u25BC', '\u25C0', '\u25B6'];
     for (var i = 0; i < btns.length; i++) {
       var b = touchButtons[btns[i]];
-      var oy = b.active ? paintRoundButton(c, b, '#b8e4ff', '#5aa8e0', '#ffffff')
-                        : paintRoundButton(c, b, '#46709c', '#1c3654', '#66aadd');
+      c.fillStyle = b.active ? '#88ccff' : '#2f557d';
+      c.beginPath();
+      c.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = '#66aadd';
+      c.lineWidth = 2;
+      c.stroke();
       c.fillStyle = '#ffffff';
       c.font = 'bold ' + Math.round(b.r * 0.78) + 'px "M PLUS Rounded 1c", sans-serif';
       c.textAlign = 'center';
       c.textBaseline = 'middle';
-      c.fillText(arrows[i], b.x, b.y + oy);
+      c.fillText(arrows[i], b.x, b.y);
     }
 
     /* D-pad center – computed from button positions so it matches layout */
@@ -403,26 +382,32 @@
 
     /* Action button */
     var ab = touchButtons.action;
-    var aoy = ab.active ? paintRoundButton(c, ab, '#ffc0d2', '#ff7aa0', '#ffffff')
-                        : paintRoundButton(c, ab, '#f0758f', '#a8324f', '#ffaacc');
+    c.fillStyle = ab.active ? '#ff88aa' : '#c94868';
+    c.beginPath();
+    c.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = '#ffaacc';
+    c.lineWidth = 2;
+    c.stroke();
     c.fillStyle = '#ffffff';
     c.font = 'bold 26px "M PLUS Rounded 1c", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     var bubbleLabel = (window.Game && Game.i18n) ? Game.i18n.t('bubbleBtn') : 'BUBBLE';
-    c.shadowColor = 'rgba(80, 0, 30, 0.5)';
-    c.shadowOffsetY = 1;
-    c.fillText(bubbleLabel, ab.x, ab.y + aoy);
-    c.shadowColor = 'transparent';
+    c.fillText(bubbleLabel, ab.x, ab.y);
 
-    /* Pause button – same sea-blue as the D-pad, with drawn bars instead
-       of a text glyph so they stay centred and crisp. */
+    /* Pause button */
     var pb = touchButtons.pause;
-    var poy = pb.active ? paintRoundButton(c, pb, '#b8e4ff', '#5aa8e0', '#ffffff')
-                        : paintRoundButton(c, pb, '#46709c', '#1c3654', '#66aadd');
+    c.fillStyle = pb.active ? '#88ccff' : '#2f557d';
+    c.beginPath();
+    c.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = '#66aadd';
+    c.lineWidth = 2;
+    c.stroke();
     c.fillStyle = '#ffffff';
-    c.fillRect(pb.x - pb.r * 0.3, pb.y + poy - pb.r * 0.36, pb.r * 0.2, pb.r * 0.72);
-    c.fillRect(pb.x + pb.r * 0.1, pb.y + poy - pb.r * 0.36, pb.r * 0.2, pb.r * 0.72);
+    c.font = 'bold 20px "M PLUS Rounded 1c", sans-serif';
+    c.fillText('II', pb.x, pb.y);
 
     c.restore();
   }
