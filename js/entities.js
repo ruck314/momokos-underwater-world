@@ -1885,7 +1885,7 @@
     var sx = Math.round(this.x - camX);
     var sy = Math.round(this.y - camY);
     if (this.flash > 0 && this.flash % 2 === 0) {
-      this.drawProjectiles(c, camX, camY);
+      if (!this.bodyOnly) this.drawProjectiles(c, camX, camY);
       return;
     }
 
@@ -2070,7 +2070,9 @@
 
     c.restore();
 
-    this.drawProjectiles(c, camX, camY);
+    /* The engine sets bodyOnly while it lights the body through a scratch
+       canvas, and paints the projectiles itself straight after. */
+    if (!this.bodyOnly) this.drawProjectiles(c, camX, camY);
   };
 
   Moni.prototype.drawProjectiles = function (c, camX, camY) {
@@ -3830,7 +3832,7 @@
   MiniBoss.prototype.draw = function (c, camX, camY) {
     if (!this.active) return;
     if (this.flash > 0 && this.flash % 2 === 0) {
-      this.drawProjectiles(c, camX, camY);
+      if (!this.bodyOnly) this.drawProjectiles(c, camX, camY);
       return;
     }
     var sx = Math.round(this.x - camX);
@@ -3840,7 +3842,9 @@
     if (this.species === 'kingCrab') drawKingCrab(c, sx, sy, this);
     else drawGiantOctopus(c, sx, sy, this);
     c.restore();
-    this.drawProjectiles(c, camX, camY);
+    /* The engine sets bodyOnly while it lights the body through a scratch
+       canvas, and paints the projectiles itself straight after. */
+    if (!this.bodyOnly) this.drawProjectiles(c, camX, camY);
   };
 
   function drawGiantOctopus(c, sx, sy, b) {

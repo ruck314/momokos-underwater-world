@@ -6,7 +6,8 @@
   /*
    * Level data format:
    *   nameKey           – i18n key for the level's display name
-   *   theme             – 'reef' | 'wreck' | 'trench' (level-select thumbnail)
+   *   theme             – 'reef' | 'wreck' | 'trench': water, backdrop planes and
+   *                       sand (js/fx.js) and the level-select thumbnail
    *   width / height    – world dimensions in pixels
    *   waterSurface      – y coord of water surface (negative = no surface)
    *   ceilingY          – optional: player can't swim above this y
@@ -35,13 +36,6 @@
     height: 480,
     waterSurface: 60,
     floorY: 440,
-
-    /* Background color gradient stops */
-    /* Same family as the title's sea so play doesn't feel like a
-       darker, different ocean. */
-    bgTop: '#12426e',
-    bgMid: '#0f3058',
-    bgBottom: '#163655',
 
     platforms: [
       /* Starting area – a few rocks to learn swimming */
@@ -240,11 +234,6 @@
     height: 480,
     waterSurface: 60,
     floorY: 440,
-
-    /* Greener, murkier water for the kelp forest */
-    bgTop: '#0f4d62',
-    bgMid: '#0b3a4e',
-    bgBottom: '#0e3442',
 
     platforms: [
       /* Section 1 – kelp forest rocks */
@@ -446,10 +435,6 @@
     dark: true,
     rockPalette: 'trench',
     sand: { top: '#3b4150', mid: '#232733', bottom: '#0c0e14', lip: 'rgba(150, 170, 200, 0.4)' },
-
-    bgTop: '#040a18',
-    bgMid: '#030713',
-    bgBottom: '#02050d',
 
     platforms: [
       /* Section 1 – learning the dark */

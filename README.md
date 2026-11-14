@@ -76,6 +76,7 @@ css/style.css       — layout & responsive styles
 js/i18n.js          — English & Japanese translations
 js/audio.js         — Web Audio API sound engine
 js/input.js         — keyboard & touch input handler
+js/fx.js            — cached light, depth and post-processing layers
 js/levels.js        — level data (separate from engine)
 js/entities.js      — all game characters & objects
 js/ui.js            — menus, HUD, dialogue, screens

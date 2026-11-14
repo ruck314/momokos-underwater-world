@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v2.0.0';
+  Game.VERSION = 'v2.1.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -157,58 +157,12 @@
      the bottom bezel instead of covering gameplay. */
   var pendingDialogue = null;
 
-  /* ---- Background parallax layers ---- */
-  var bgLayers = [];
+  /* ---- Background life: fish schools and drifting motes. The parallax
+     reef planes themselves are cached strips in fx.js. ---- */
   var bgFishSchools = [];
   var currentMotes = [];
 
   function initBgLayers() {
-    bgLayers = [];
-    /* Layer 0 – distant mountains / reefs */
-    var layer0 = [];
-    var bgColors0 = ['#0a2040', '#0b2545', '#091e3a'];
-    for (var i = 0; i < 30; i++) {
-      layer0.push({
-        x: i * 200 + Math.random() * 100,
-        y: 320 + Math.random() * 80,
-        w: 80 + Math.random() * 120,
-        h: 40 + Math.random() * 60,
-        color: bgColors0[Math.floor(Math.random() * bgColors0.length)],
-        blobSeed: Math.random() * 100,
-      });
-    }
-    bgLayers.push({ items: layer0, parallax: 0.15 });
-
-    /* Layer 1 – mid-distance coral silhouettes */
-    var layer1 = [];
-    var bgColors1 = ['#122a48', '#14304e', '#102540'];
-    for (var j = 0; j < 40; j++) {
-      layer1.push({
-        x: j * 140 + Math.random() * 60,
-        y: 350 + Math.random() * 60,
-        w: 30 + Math.random() * 50,
-        h: 30 + Math.random() * 50,
-        color: bgColors1[Math.floor(Math.random() * bgColors1.length)],
-        blobSeed: Math.random() * 100,
-      });
-    }
-    bgLayers.push({ items: layer1, parallax: 0.3 });
-
-    /* Layer 2 – closer coral/rock formations */
-    var layer2 = [];
-    var bgColors2 = ['#1a3858', '#1c3d5e', '#183350'];
-    for (var k = 0; k < 20; k++) {
-      layer2.push({
-        x: k * 280 + Math.random() * 120,
-        y: 370 + Math.random() * 40,
-        w: 40 + Math.random() * 60,
-        h: 25 + Math.random() * 35,
-        color: bgColors2[Math.floor(Math.random() * bgColors2.length)],
-        blobSeed: Math.random() * 100,
-      });
-    }
-    bgLayers.push({ items: layer2, parallax: 0.5 });
-
     /* Background fish schools */
     bgFishSchools = [];
     for (var fs = 0; fs < 4; fs++) {
@@ -852,6 +806,16 @@
 
     ctx.restore();
 
+    /* The menus get the same finishing pass as the game (which applies
+       its own inside renderGame, under the HUD): a little glow on the
+       bright lettering, the grade and the vignette, over whatever area
+       the screen painted. */
+    if (state !== State.PLAYING && state !== State.PAUSED && state !== State.GAME_OVER) {
+      var beach = state === State.BEACH;
+      if (fullBleed) Game.fx.post(ctx, 'reef', 0, 0, CANVAS_W, CANVAS_H, 0, 0, 0.45, 1, 1);
+      else Game.fx.post(ctx, 'reef', GAME_X, GAME_Y, W, H, 0, 0, beach ? 0.35 : 0.45, beach ? 0 : 1, beach ? 0.6 : 1);
+    }
+
     updateChrome();
 
     /* Canvas-space overlays sit outside the game viewport so they can
@@ -901,72 +865,24 @@
   function renderGame() {
     if (!level) return;
 
-    /* Background gradient */
-    var grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, level.bgTop);
-    grad.addColorStop(0.5, level.bgMid);
-    grad.addColorStop(1, level.bgBottom);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
+    var gfx = Game.fx;
+    var theme = level.theme;
+    var fxT = Date.now() * 0.001;
+    var floorBase = level.floorY - camera.y;
 
-    /* Light rays – brightest just under the surface, fading with depth.
-       No sunlight reaches the trench. */
-    if (!level.dark) {
-    ctx.save();
-    var rayGrad = ctx.createLinearGradient(0, 0, 0, H);
-    rayGrad.addColorStop(0, 'rgba(150, 215, 255, 0.09)');
-    rayGrad.addColorStop(0.7, 'rgba(150, 215, 255, 0.025)');
-    rayGrad.addColorStop(1, 'rgba(150, 215, 255, 0)');
-    ctx.fillStyle = rayGrad;
-    for (var r = 0; r < 6; r++) {
-      var rx = 150 * r - camera.x * 0.05 + Math.sin(Date.now() * 0.0003 + r) * 20;
-      ctx.beginPath();
-      ctx.moveTo(rx, 0);
-      ctx.lineTo(rx + 30, 0);
-      ctx.lineTo(rx + 90, H);
-      ctx.lineTo(rx - 30, H);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-    }
+    /* Water: surface-lit gradient with the sun's glow baked in */
+    gfx.drawWater(ctx, theme, 0, 0, W, H);
 
-    /* Parallax background layers – organic blob shapes */
-    for (var li = 0; li < bgLayers.length; li++) {
-      var layer = bgLayers[li];
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      for (var it = 0; it < layer.items.length; it++) {
-        var item = layer.items[it];
-        var bx = item.x - camera.x * layer.parallax;
-        if (bx + item.w > 0 && bx < W) {
-          ctx.fillStyle = item.color;
-          ctx.beginPath();
-          var cx = bx + item.w / 2;
-          var hw = item.w / 2;
-          var hh = item.h / 2;
-          var seed = item.blobSeed || 0;
-          ctx.moveTo(cx - hw, item.y);
-          ctx.bezierCurveTo(
-            cx - hw, item.y - hh - Math.sin(seed) * 8,
-            cx - hw * 0.3, item.y - hh - Math.cos(seed * 2) * 12,
-            cx, item.y - hh
-          );
-          ctx.bezierCurveTo(
-            cx + hw * 0.3, item.y - hh - Math.sin(seed * 3) * 10,
-            cx + hw, item.y - hh - Math.cos(seed) * 6,
-            cx + hw, item.y
-          );
-          ctx.closePath();
-          ctx.fill();
-        }
-      }
-      ctx.restore();
-    }
+    /* Far and middle reef planes, then the light shafts falling in front
+       of them, then the nearest plane – so the rays sit inside the depth
+       instead of on top of it. No sunlight reaches the trench. */
+    gfx.drawLayers(ctx, theme, camera.x, floorBase, 0, W, 0, 1);
+    if (!level.dark) gfx.drawRays(ctx, camera.x, fxT, 0, 0, W, H, 0.4);
+    gfx.drawLayers(ctx, theme, camera.x, floorBase, 0, W, 2, 2);
 
     /* Background fish schools */
     ctx.save();
-    ctx.globalAlpha = 0.2;
+    ctx.globalAlpha = level.dark ? 0.2 : 0.42;
     var now = Date.now();
     for (var fsi = 0; fsi < bgFishSchools.length; fsi++) {
       var school = bgFishSchools[fsi];
@@ -979,7 +895,7 @@
         var fx = schX + sf.ox + Math.sin(now * 0.001 + sf.phase) * 3;
         var fy = school.y + sf.oy + Math.cos(now * 0.0012 + sf.phase) * 2;
         if (fx > -10 && fx < W + 10) {
-          ctx.fillStyle = '#6688aa';
+          ctx.fillStyle = level.dark ? '#6688aa' : '#0a3a70';
           ctx.beginPath();
           ctx.moveTo(fx, fy);
           ctx.lineTo(fx - 5 * school.dir, fy - 2);
@@ -1012,8 +928,7 @@
     }
 
     /* Ocean floor – undulating sand, lit from above and darkening with depth */
-    var sandPal = level.sand || { top: '#8a7656', mid: '#5e4e39', bottom: '#2e261d', lip: 'rgba(214, 196, 150, 0.55)' };
-    var floorBase = level.floorY - camera.y;
+    var sandPal = level.sand || gfx.theme(theme).sand;
     var sandGrad = ctx.createLinearGradient(0, floorBase - 8, 0, H);
     sandGrad.addColorStop(0, sandPal.top);
     sandGrad.addColorStop(0.35, sandPal.mid);
@@ -1029,6 +944,14 @@
     ctx.lineTo(W, H + 10);
     ctx.closePath();
     ctx.fill();
+    /* Caustics – the net of focused sunlight sliding over the sand,
+       clipped to the sand so it never lights the water above it */
+    if (!level.dark) {
+      ctx.save();
+      ctx.clip();
+      gfx.drawCaustics(ctx, camera.x, fxT, 0, W, floorBase - 12, H, 0.55);
+      ctx.restore();
+    }
     /* Sunlit lip along the crest and a couple of fainter sand ripples */
     ctx.save();
     ctx.lineCap = 'round';
@@ -1077,44 +1000,6 @@
     }
     ctx.restore();
 
-    /* Caustics – soft rings of focused sunlight drifting over the sand.
-       Cells are world-locked on a repeating strip; only their wobble
-       is animated. */
-    if (!level.dark) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = 'rgb(255, 244, 200)';
-    var causticTime = nowT * 0.001;
-    var CAUSTIC_SPAN = 1056;
-    for (var ci = 0; ci < 32; ci++) {
-      var cwx = ci * 33 + Math.sin(ci * 2.1) * 20 - camera.x + Math.sin(causticTime * 0.4 + ci) * 8;
-      var cix = ((cwx % CAUSTIC_SPAN) + CAUSTIC_SPAN) % CAUSTIC_SPAN - 60;
-      if (cix > W + 60) continue;
-      var ciy = floorBase + 9 + (ci % 3) * 8 + Math.sin(ci * 1.3) * 3;
-      var cir = 22 + (ci * 7) % 13;
-      ctx.beginPath();
-      var cpts = [];
-      for (var cj = 0; cj < 6; cj++) {
-        var cang = cj / 6 * Math.PI * 2;
-        var crr = cir * (0.65 + 0.35 * Math.sin(causticTime * 1.3 + ci * 2 + cj * 1.9));
-        cpts.push([cix + Math.cos(cang) * crr, ciy + Math.sin(cang) * crr * 0.3]);
-      }
-      ctx.moveTo((cpts[5][0] + cpts[0][0]) / 2, (cpts[5][1] + cpts[0][1]) / 2);
-      for (cj = 0; cj < 6; cj++) {
-        var cq = cpts[(cj + 1) % 6];
-        ctx.quadraticCurveTo(cpts[cj][0], cpts[cj][1], (cpts[cj][0] + cq[0]) / 2, (cpts[cj][1] + cq[1]) / 2);
-      }
-      /* Wide faint pass then a thin core, so the light reads soft */
-      ctx.globalAlpha = 0.04;
-      ctx.lineWidth = 4;
-      ctx.stroke();
-      ctx.globalAlpha = 0.07;
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-    }
-    ctx.restore();
-    }
-
     /* Rock ceiling over the trench – a jagged dark band world-locked
        along the top of the view */
     if (level.ceilingY !== undefined) {
@@ -1135,13 +1020,6 @@
       ctx.lineWidth = 1;
       ctx.stroke();
     }
-
-    /* Light falloff toward the seabed */
-    var depthGrad = ctx.createLinearGradient(0, H * 0.5, 0, H);
-    depthGrad.addColorStop(0, 'rgba(6, 18, 38, 0)');
-    depthGrad.addColorStop(1, 'rgba(6, 18, 38, 0.28)');
-    ctx.fillStyle = depthGrad;
-    ctx.fillRect(0, H * 0.5, W, H * 0.5);
 
     /* Water surface – two translucent wave bands with a bright crest
        line and twinkling glints, seen from just below */
@@ -1209,7 +1087,7 @@
 
     /* NPCs */
     for (var nc = 0; nc < npcs.length; nc++) {
-      npcs[nc].entity.draw(ctx, camera.x, camera.y);
+      drawLit(npcs[nc].entity, false);
       /* Interaction indicator */
       var npc = npcs[nc].entity;
       if (!npc.talking) {
@@ -1232,19 +1110,42 @@
 
     /* Enemies */
     for (var ei = 0; ei < enemies.length; ei++) {
-      enemies[ei].draw(ctx, camera.x, camera.y);
+      /* The eel is half inside its rock, so it keeps the rock's light */
+      if (enemies[ei].headW !== undefined) enemies[ei].draw(ctx, camera.x, camera.y);
+      else drawLit(enemies[ei], false);
     }
 
-    /* Boss */
-    if (boss) boss.draw(ctx, camera.x, camera.y);
+    /* Boss – body through the lighting rig, projectiles straight on top */
+    if (boss) {
+      boss.bodyOnly = true;
+      drawLit(boss, true);
+      boss.bodyOnly = false;
+      boss.drawProjectiles(ctx, camera.x, camera.y);
+    }
 
     /* Player bubbles */
     for (var bi = 0; bi < bubbles.length; bi++) {
       bubbles[bi].draw(ctx, camera.x, camera.y);
     }
 
-    /* Player */
-    if (player) player.draw(ctx, camera.x, camera.y);
+    /* Player – a soft shadow on whatever is below her and a little cool
+       light behind her, so she sits in the scene and reads against it */
+    if (player) {
+      var pcx = player.x + player.w / 2 - camera.x;
+      var feet = player.y + player.h;
+      var ground = level.floorY + Math.sin((player.x + player.w / 2) * 0.008) * 6 + Math.sin((player.x + player.w / 2) * 0.02) * 3 + 4;
+      for (var sp = 0; sp < level.platforms.length; sp++) {
+        var spf = level.platforms[sp];
+        if (spf.x < player.x + player.w && spf.x + spf.w > player.x && spf.y >= feet - 4 && spf.y < ground) ground = spf.y + 2;
+      }
+      var drop = ground - feet;
+      if (drop < 170) {
+        var near = 1 - Math.max(0, drop) / 170;
+        gfx.softShadow(ctx, pcx, ground - camera.y, 9 + near * 9, 2.5 + near * 2.5, (level.dark ? 0.3 : 0.55) * near);
+      }
+      if (!level.dark) gfx.softGlow(ctx, pcx, player.y + player.h / 2 - camera.y, 34, 0.2);
+      drawLit(player, false);
+    }
 
     /* Wolfe (visible near surface) */
     if (wolfe && camera.y <= 20) {
@@ -1289,13 +1190,54 @@
     }
     ctx.restore();
 
-    /* Depth fog – blue overlay intensifying toward bottom */
-    var fogGrad = ctx.createLinearGradient(0, 0, 0, H);
-    fogGrad.addColorStop(0, 'rgba(10, 22, 40, 0)');
-    fogGrad.addColorStop(0.6, 'rgba(10, 22, 40, 0)');
-    fogGrad.addColorStop(1, 'rgba(10, 22, 40, 0.1)');
-    ctx.fillStyle = fogGrad;
-    ctx.fillRect(0, 0, W, H);
+    /* Soft-focus reef silhouettes hugging the bottom edge, closer to the
+       lens than the action, then out-of-focus motes drifting past */
+    gfx.drawForeground(ctx, theme, camera.x, H, 0, W);
+    gfx.drawHaze(ctx, camera.x, fxT, level.dark ? 0.6 : 1);
+
+    /* Bloom, colour grade and vignette over the finished scene. The HUD
+       is drawn afterwards so it stays crisp. */
+    gfx.post(ctx, theme, 0, 0, W, H, GAME_X, GAME_Y, level.dark ? 1 : 0.6, 1, 1);
+  }
+
+  /* Draws a character lit to match the scene (see fx.js). In the reef
+     and the wreck the sun is straight above. In the trench there is no
+     sun: the rim comes from Moni's magenta glow once she is awake, or
+     else from the nearest glowing plant, vent or crystal, and points
+     toward whichever it is. */
+  var GLOW_REACH = 150, MONI_REACH = 420;
+  function drawLit(e, big) {
+    if (!Game.FX.lighting) { e.draw(ctx, camera.x, camera.y); return; }
+    if (e.active === false) return;
+    var lx = 0, ly = -1, rim = 0, rimA = 1;
+    if (level.dark && e !== boss) {
+      rim = -1;
+      var ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+      var dx = 0, dy = 0, dist = 0;
+      if (boss && boss.active && !boss.defeated) {
+        dx = boss.x + boss.w / 2 - ex;
+        dy = boss.y + boss.h * 0.45 - ey;
+        dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < MONI_REACH) { rim = 0; rimA = 1 - dist / MONI_REACH; }
+      }
+      if (rim < 0) {
+        var best = GLOW_REACH;
+        for (var i = 0; i < level.decorations.length; i++) {
+          var d = level.decorations[i];
+          var kind = d.type === 'glowplant' ? 1 + (d.variant || 0) % 3 : d.type === 'vent' ? 4 : d.type === 'crystal' ? 5 : 0;
+          if (!kind || Math.abs(d.x - ex) > best) continue;
+          var gx = d.x - ex, gy = d.y - 40 - ey;
+          var gd = Math.sqrt(gx * gx + gy * gy);
+          if (gd < best) { best = gd; rim = kind; dx = gx; dy = gy; dist = gd; rimA = 1 - gd / GLOW_REACH; }
+        }
+      }
+      if (rim >= 0 && dist > 0) {
+        lx = Math.round(dx / dist * 1.3);
+        ly = Math.round(dy / dist * 1.3);
+        if (!lx && !ly) ly = -1;
+      }
+    }
+    Game.fx.lit(ctx, e, camera.x, camera.y, level.theme, big, lx, ly, rim, rimA);
   }
 
   /* The trench shadow is built on an offscreen layer so more than one
@@ -1320,7 +1262,7 @@
     var d = darkCtx;
     d.globalCompositeOperation = 'source-over';
     d.clearRect(0, 0, W, H);
-    d.fillStyle = 'rgba(2, 6, 16, 0.86)';
+    d.fillStyle = 'rgba(3, 5, 24, 0.8)';
     d.fillRect(0, 0, W, H);
     d.globalCompositeOperation = 'destination-out';
     carveLight(d, lx, ly, 30, 300, 1);
@@ -2608,6 +2550,7 @@
       accumulator -= FIXED_DT;
     }
 
+    Game.fx.frame(delta);
     render();
     requestAnimationFrame(gameLoop);
   }
@@ -2679,6 +2622,7 @@
     canvas.height = CANVAS_H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
+    Game.fx.setScale(dpr);
   }
 
   /* ---- Init ---- */
