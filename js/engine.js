@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v2.4.0';
+  Game.VERSION = 'v2.5.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -2650,13 +2650,55 @@
 
     accumulator += delta;
     while (accumulator >= FIXED_DT) {
+      snapMovers();
       update();
       accumulator -= FIXED_DT;
     }
 
     Game.fx.frame(delta);
-    render();
+    renderBlended(accumulator / FIXED_DT);
     requestAnimationFrame(gameLoop);
+  }
+
+  /* Render interpolation. The simulation steps at a fixed 60 Hz but the
+     display ticks at its own rate (120 Hz on newer iPads, and rAF jitter
+     at 60 Hz lands some frames on zero steps and the next on two), so
+     drawing the newest step made Momoko and the scroll judder. Each frame
+     instead draws Momoko, the camera and the beach walker blended between
+     the last two steps; a jump of more than 48 px (teleport, respawn) or a
+     replaced object is drawn as is. */
+  var movers = [null, null, null], moverX = [0, 0, 0], moverY = [0, 0, 0], moverCur = [0, 0, 0, 0, 0, 0];
+  function currentMovers() {
+    movers[0] = player;
+    movers[1] = camera;
+    movers[2] = state === State.BEACH && Game.ui.beachWalker ? Game.ui.beachWalker() : null;
+  }
+  var snapped = [null, null, null], blended = [false, false, false];
+  function snapMovers() {
+    currentMovers();
+    for (var i = 0; i < 3; i++) {
+      snapped[i] = movers[i];
+      if (movers[i]) { moverX[i] = movers[i].x; moverY[i] = movers[i].y; }
+    }
+  }
+  function renderBlended(alpha) {
+    currentMovers();
+    for (var i = 0; i < 3; i++) {
+      var o = movers[i];
+      blended[i] = false;
+      if (!o || o !== snapped[i] || Math.abs(o.x - moverX[i]) > 48 || Math.abs(o.y - moverY[i]) > 48) continue;
+      moverCur[i * 2] = o.x; moverCur[i * 2 + 1] = o.y;
+      o.x = moverX[i] + (o.x - moverX[i]) * alpha;
+      o.y = moverY[i] + (o.y - moverY[i]) * alpha;
+      blended[i] = true;
+    }
+    try {
+      render();
+    } finally {
+      for (var j = 0; j < 3; j++) {
+        if (blended[j]) { movers[j].x = moverCur[j * 2]; movers[j].y = moverCur[j * 2 + 1]; }
+      }
+    }
   }
 
   /* Compute canvas dimensions to match the current viewport's aspect ratio.

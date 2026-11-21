@@ -269,12 +269,15 @@
     s.y += s.vy * dt;
   }
 
+  /* Swim pitch by heading: straight up, up-forward, forward, down-forward, down */
+  var PITCHES = [0.12, 0.5, 0.92, 1.05, 1.12];
+
   function Rig(k) {
     this.k = k || 1;
     this.t = 0;
     this.x = 0; this.y = 0; this.vx = 0; this.vy = 0;
     this.facing = 1; this.sx = 1; this.turnFrom = 1; this.turnT = 1;
-    this.key = 0; this.swim = 0;
+    this.key = 0; this.swim = 0; this.hx = 1; this.hy = 0;
     this.pitch = 0.05; this.pitchV = 0;
     this.kickPh = 0; this.strokePh = 0; this.kickAmp = 0.25;
     this.antic = 0; this.burst = 0; this.brake = 0;
@@ -326,9 +329,9 @@
     /* Turn: a quick squash through the profile instead of a snap */
     var facing = s.facing || 1;
     if (facing !== this.facing) { this.turnFrom = this.sx; this.facing = facing; this.turnT = 0; }
-    if (this.turnT < 1) this.turnT = Math.min(1, this.turnT + dt / 0.16);
+    if (this.turnT < 1) this.turnT = Math.min(1, this.turnT + dt / 0.2);
     var raw = lerp(this.turnFrom, this.facing, smooth(this.turnT));
-    this.sx = (raw > 0 || (raw === 0 && this.facing > 0) ? 1 : -1) * Math.max(0.42, Math.abs(raw));
+    this.sx = (raw > 0 || (raw === 0 && this.facing > 0) ? 1 : -1) * Math.max(0.5, Math.abs(raw));
 
     /* Intent, anticipation and braking */
     var ix = keys.left || keys.right ? 1 : 0;
@@ -351,14 +354,26 @@
     this.swim += (key - this.swim) * Math.min(1, dt / (key ? 0.12 : 0.42));
     var sw = this.swim;
 
-    /* Body pitch: into the swim direction, rocking back on a brake */
-    var target;
-    if (key) target = ix ? (iy < 0 ? 0.5 : iy > 0 ? 1.05 : 0.92) : (iy < 0 ? 0.04 : 1.12);
-    else target = 0.05 + Math.sin(this.t * 0.9) * 0.04;
+    /* Heading in her facing frame (hx >= 0, hy < 0 is up), eased toward
+       the swim intent so pitch, aim and stroke turn through a change of
+       direction instead of jumping; held while she glides to a stop */
+    if (key) {
+      var hn = 1 / Math.sqrt(ix * ix + iy * iy), hk = Math.min(1, dt / 0.1);
+      this.hx += (ix * hn - this.hx) * hk;
+      this.hy += (iy * hn - this.hy) * hk;
+    }
+
+    /* Body pitch: into the heading, easing back upright as the stroke
+       fades (a glide, not a snap), rocking back on a brake and rolling
+       up through a turn */
+    var ha = clamp(Math.atan2(this.hy, Math.max(0, this.hx)) / (PI / 4) + 2, 0, 4), hi = Math.min(3, Math.floor(ha));
+    var glide = key ? sw : Math.min(sw, Math.abs(vx) / 2.6);
+    var target = lerp(0.05 + Math.sin(this.t * 0.9) * 0.04, lerp(PITCHES[hi], PITCHES[hi + 1], ha - hi), glide);
     if (this.antic > 0) target -= 0.24;
-    target -= 0.5 * this.brake;
+    target -= 0.4 * this.brake;
+    if (this.turnT < 1) target -= 0.4 * Math.sin(this.turnT * PI) * sw;
     if (this.react === 'hurt') target -= 0.3 * this.reactEnv();
-    this.pitchV += (64 * (target - this.pitch) - 2 * 0.5 * 8 * this.pitchV) * dt;
+    this.pitchV += (81 * (target - this.pitch) - 2 * 0.75 * 9 * this.pitchV) * dt;
     this.pitch += this.pitchV * dt;
 
     /* Kick and stroke clocks */
@@ -513,12 +528,16 @@
     P.sx = R.sx;
     var hop = R.react === 'happy' ? Math.sin(clamp((R.reactDur - R.reactT) / R.reactDur, 0, 1) * PI) * 1.6 : 0;
     if (R.react === 'cheer') hop = Math.abs(Math.sin(t * 6)) * 1.2 * env;
-    P.bob = Math.sin(t * 1.9) * 0.9 * (1 - sw) + Math.sin(R.kickPh * 2) * 0.2 * sw - hop;
+    /* Swimming straight up is drawn upright, so it gets its own stroke:
+       a wide side pull with the free arm, a pumping knee kick and a
+       little surge on each pull, or it reads as treading water */
+    var up = smooth((-R.hy - 0.55) / 0.4) * sw, ph = R.strokePh % TAU;
+    P.bob = Math.sin(t * 1.9) * 0.9 * (1 - sw) + Math.sin(R.kickPh * 2) * 0.2 * sw - hop - 0.45 * Math.sin(ph) * up;
     P.pitch = R.pitch;
     /* Squash and stretch along the body: coil before the dash, stretch
        out of it, a squeeze through the turn */
     P.sq = R.burst * 0.07 - (R.antic > 0 ? 0.06 : 0) - (R.turnT < 1 ? Math.sin(R.turnT * PI) * 0.04 : 0);
-    P.headRot = -R.pitch * 0.6 + R.look.y * 0.06 + Math.sin(t * 0.7) * 0.04 * (1 - sw);
+    P.headRot = -R.pitch * 0.6 + R.look.y * 0.06 + Math.sin(t * 0.7) * 0.04 * (1 - sw) - 0.1 * up;
     if (R.react === 'hurt') P.headRot += 0.18 * env;
     var sg = R.sx >= 0 ? 1 : -1, ha = P.pitch + P.headRot;
     toLocal(P.hm, R.hair[0], sg, ha);
@@ -534,8 +553,8 @@
     for (var i = 0; i < 2; i++) {
       var L = P.legs[i];
       var phi = R.kickPh + (mono ? 0 : i * PI), w = t * 2.6 + i * PI;
-      var s1 = 0.08 + amp * 0.42 * Math.sin(phi);
-      var s2 = amp * 0.62 * (0.5 + 0.5 * Math.sin(phi + 1.6));
+      var s1 = 0.08 + amp * 0.42 * (1 - 0.5 * up) * Math.sin(phi);
+      var s2 = amp * 0.62 * (1 + 0.8 * up) * (0.5 + 0.5 * Math.sin(phi + 1.6));
       var s3 = 1.05 + 0.35 * amp * Math.sin(phi - 0.9);
       var i1 = -0.05 + 0.2 * Math.sin(w), i2 = 0.42 + 0.32 * Math.sin(w + 1.4), i3 = 0.3 + 0.15 * Math.sin(w + 0.6);
       if (mono) { i1 = 0.02 + 0.12 * Math.sin(t * 2.2); i2 = 0.22 + 0.2 * Math.sin(t * 2.2 + 1.2); i3 = 0.7; }
@@ -547,10 +566,13 @@
     }
     P.monoFlex = 0.5 * Math.sin(R.kickPh - 1.3) * amp * sw + 0.15 * Math.sin(t * 2.2 - 0.8) * (1 - sw);
 
-    /* Free arm: sculls by her hip when idle, strokes while swimming */
-    var ph = R.strokePh % TAU;
+    /* Free arm: sculls by her hip when idle, strokes while swimming
+       (straight up: reaches out wide and pulls down to her hip, elbow
+       leading the recovery) */
     var bS1 = lerp(-0.9, 1.15, 0.5 - 0.5 * Math.cos(ph));
     var bS2 = ph < PI ? -0.2 : -0.2 - 1.1 * Math.sin(ph - PI);
+    bS1 = lerp(bS1, lerp(0.3, 2.0, 0.5 + 0.5 * Math.cos(ph)), up);
+    bS2 = lerp(bS2, ph < PI ? 0.15 * Math.sin(ph) : -0.95 * Math.sin(ph - PI), up);
     if (P.food !== 'none') { bS1 = lerp(bS1, 0.4, 0.55); bS2 = lerp(bS2, -0.8, 0.55); }
     var w2 = t * 2.4;
     var B = P.armB;
@@ -558,8 +580,9 @@
     B.a2 = lerp(-0.5 + 0.28 * Math.sin(w2 + 1.2), bS2, sw);
     if (R.brake > 0) { B.a1 = lerp(B.a1, -1.3, R.brake); B.a2 = lerp(B.a2, -0.3, R.brake); }
     if (R.antic > 0) { B.a1 = 1.2; B.a2 = -0.4; }
-    /* Wand arm: points the way she swims, thrusts on a cast */
-    var F = P.armF, fwd = -PI / 2 - P.pitch * 0.85;
+    /* Wand arm: points the way she swims (lifting toward her heading
+       when she swims up), thrusts on a cast */
+    var F = P.armF, fwd = -PI / 2 - P.pitch * 0.85 + 0.7 * Math.min(0, Math.atan2(R.hy, R.hx)) * sw;
     F.a1 = lerp(-1.05 + 0.06 * Math.sin(t * 1.9 + 0.5), fwd + 0.22, sw);
     F.a2 = lerp(-0.45 + 0.05 * Math.sin(t * 1.9), -0.22, sw);
     if (R.cast > 0) {
@@ -594,21 +617,22 @@
   }
 
   /* Walking on the beach: { t, fwd, vy } plus, from the beach scene,
-     phase (stride clock that advances with distance walked, so her feet
-     don't skate), air (off the ground) and land (0..1 just after a
-     landing). No swim tilt. */
+     phase (stride clock, advanced only while she walks, so her feet
+     step instead of paddling in place), air (off the ground), land (0..1 just after a
+     landing) and sx (0.5..1 width through a turn). No swim tilt. */
   function walkPose(P, m, frame) {
     var t = m.t !== undefined ? m.t : Date.now() * 0.001;
     var fwd = m.fwd || 0, vy = m.vy || 0;
     var walk = Math.min(1, Math.abs(fwd) / 1.8);
     var air = m.air ? clamp(0.55 - vy * 0.3, 0.2, 1) : 0, land = m.land || 0;
     P.t = t;
+    P.sx = m.sx || 1;
     P.breathe = Math.sin(t * 2.2);
     P.headY = P.breathe * 0.22;
     var ph = m.phase !== undefined ? m.phase * 1.5 : t * 9 + (frame || 0) * 0.3;
     for (var i = 0; i < 2; i++) {
       var s = Math.sin(ph + i * PI);
-      P.legs[i].a1 = -0.6 * s * walk;
+      P.legs[i].a1 = -0.75 * s * walk;
       P.legs[i].a2 = 0.1 + 0.75 * Math.max(0, Math.sin(ph + i * PI + 0.8)) * walk;
       P.legs[i].f = -P.legs[i].a1 - P.legs[i].a2 * 0.6;
       /* tuck in the air (front knee higher), soak up the landing */
@@ -617,12 +641,16 @@
       P.legs[i].f = lerp(P.legs[i].f, 0.25, air);
     }
     /* stance legs angle out, so drop the body to keep her feet down */
-    P.bob = 2.6 * walk * (1 - Math.cos(0.6 * Math.sin(ph))) * (1 - air) + 1.1 * land;
+    P.bob = 2.6 * walk * (1 - Math.cos(0.75 * Math.sin(ph))) * (1 - air) + 1.1 * land;
+    P.headY -= 0.3 * P.bob;
     P.pitch = 0.08 * walk * (1 - air);
     P.sq = air * clamp(-vy * 0.03, -0.03, 0.05) - 0.05 * land;
-    P.armB.a1 = lerp(0.6 + 0.5 * Math.sin(ph) * walk, 1.6, air * 0.7);
-    P.armB.a2 = -0.35 - 0.3 * walk;
-    P.armF.a1 += 0.12 * Math.sin(ph + PI) * walk - 0.35 * air;
+    /* relaxed arms swinging against the legs, soft elbows; the wand
+       arm drops from its held-out stance as she walks */
+    P.armB.a1 = lerp(0.35 + 0.55 * Math.sin(ph) * walk, 1.6, air * 0.7);
+    P.armB.a2 = -0.3 - 0.25 * walk;
+    P.armF.a1 = lerp(P.armF.a1, -0.5 + 0.35 * Math.sin(ph + PI), walk) - 0.35 * air;
+    P.armF.a2 = lerp(P.armF.a2, -0.6, walk);
     P.hm.x = -clamp(fwd * 0.5, -1.4, 1.4) + Math.sin(t * 2.3) * 0.3;
     P.hm.y = clamp(-vy * 0.6, -1.4, 1.4);
     P.ht.x = P.hm.x * 1.8 + Math.sin(t * 2.3 - 0.6) * 0.4;
@@ -2134,6 +2162,10 @@
     c.save();
     c.translate(14, 19.6);
     c.rotate(P.headRot);
+    /* the big head narrows less than the body through a turn, so it
+       reads as turning round instead of a card flipping */
+    var ax = Math.abs(P.sx);
+    if (ax < 0.8) c.scale(0.8 / ax, 1);
     c.translate(-14, -19.6);
     setLight(P.pitch + P.headRot);
     fn();

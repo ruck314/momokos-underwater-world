@@ -1969,6 +1969,7 @@
   var BEACH_WALK_SPEED = 2.6;
   var BEACH_JUMP_V = -5.2;
   var BEACH_GRAVITY = 0.32;
+  var BEACH_STRIDE = 0.2, BEACH_HALF_STRIDE = Math.PI / 1.5;
 
   function startBeachCutscene() {
     beachTimer = 0;
@@ -1982,6 +1983,7 @@
       walkPhase: 0,
       walkAmt: 0,
       land: 0,
+      sx: 1, turnFrom: 1, turnT: 1, face: 1,
       grounded: true,
       moving: false,
     };
@@ -2014,10 +2016,22 @@
       m.grounded = true;
     }
 
-    if (m.moving && m.grounded) m.walkPhase += 0.35;
+    /* Stride clock (x1.5 in hero.js): ~2.9 strides a second at her
+       walk speed, short first step, and on a stop she finishes the step
+       to feet-together instead of freezing mid-stride */
+    if (m.grounded && m.moving) m.walkPhase += BEACH_STRIDE * (0.4 + 0.6 * m.walkAmt);
+    else if (m.grounded && m.walkAmt > 0.05) {
+      var rest = Math.ceil(m.walkPhase / BEACH_HALF_STRIDE) * BEACH_HALF_STRIDE;
+      m.walkPhase = Math.min(rest, m.walkPhase + BEACH_STRIDE * 0.8);
+    }
     /* stride blends in and out instead of popping; a short settle on landing */
-    m.walkAmt += ((m.moving && m.grounded ? 1 : 0) - m.walkAmt) * 0.25;
+    m.walkAmt += ((m.moving && m.grounded ? 1 : 0) - m.walkAmt) * (m.moving ? 0.25 : 0.14);
     m.land = Math.max(0, m.land - 0.1);
+    /* Turn through a 0.2 s squash with a small dip, not a mirror snap */
+    if (m.facing !== m.face) { m.face = m.facing; m.turnFrom = m.sx; m.turnT = 0; }
+    if (m.turnT < 1) m.turnT = Math.min(1, m.turnT + 1 / 12);
+    var k = m.turnT * m.turnT * (3 - 2 * m.turnT), raw = m.turnFrom + (m.face - m.turnFrom) * k;
+    m.sx = (raw > 0 || (raw === 0 && m.face > 0) ? 1 : -1) * Math.max(0.5, Math.abs(raw));
   }
 
   function drawPalmTree(c, x, groundY, scale, sway) {
@@ -2359,14 +2373,13 @@
 
     c.save();
     c.translate(mm.x, mm.y);
-    c.scale(2, 2);
-    if (mm.facing === -1) c.scale(-1, 1);
+    c.scale(mm.sx < 0 ? -2 : 2, 2);
     /* The sprite's natural origin is its top-left, so shift up by full
        sprite height (34) to plant feet on the ground line. */
     if (Game.entities && Game.entities.drawMomokoSprite) {
       Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, 0,
-        { t: Date.now() * 0.001, fwd: 1.8 * mm.walkAmt, vy: mm.grounded ? 0 : mm.vy * 0.4,
-          phase: mm.walkPhase, air: !mm.grounded, land: mm.land });
+        { t: Date.now() * 0.001, fwd: 1.8 * mm.walkAmt, vy: mm.grounded ? 0 : mm.vy * 0.4, sx: Math.abs(mm.sx),
+          phase: mm.walkPhase, air: !mm.grounded, land: Math.max(mm.land, 0.35 * Math.sin(mm.turnT * Math.PI)) });
     }
     /* Companion crab trails behind her opposite facing direction */
     if (Game.entities && Game.entities.drawCrabPet &&
@@ -3232,6 +3245,7 @@
     drawBeachCutscene: drawBeachCutscene,
     startBeachCutscene: startBeachCutscene,
     updateBeach: updateBeach,
+    beachWalker: function () { return beachMomoko; },
     handleTitleClick: handleTitleClick,
     handlePauseClick: handlePauseClick,
     handleGameOverClick: handleGameOverClick,

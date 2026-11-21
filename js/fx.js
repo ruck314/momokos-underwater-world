@@ -812,7 +812,9 @@
   function lit(c, e, camX, camY, themeName, big, lx, ly, rim, rimA, inked) {
     var g = getRig(big ? 1 : 0), L = LIGHT[themeName] || LIGHT.reef;
     var w = g.w, h = g.h;
-    var bx = Math.round(e.x - camX) - g.pad, by = Math.round(e.y - camY) - g.pad;
+    /* placed on the device-pixel grid, not whole logical pixels, so a
+       swimmer's steps stay even on a retina screen */
+    var bx = Math.round((e.x - camX) * S) / S - g.pad, by = Math.round((e.y - camY) * S) / S - g.pad;
     if (bx > W || by > H || bx + w < 0 || by + h < 0) return;
     var a = g.ax;
     a.clearRect(0, 0, w, h);
