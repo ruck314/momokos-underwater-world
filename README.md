@@ -78,6 +78,7 @@ js/audio.js         — Web Audio API sound engine
 js/input.js         — keyboard & touch input handler
 js/fx.js            — cached light, depth and post-processing layers
 js/levels.js        — level data (separate from engine)
+js/hero.js          — Momoko's cel-shaded character painter
 js/entities.js      — all game characters & objects
 js/ui.js            — menus, HUD, dialogue, screens
 js/engine.js        — game loop, state machine, rendering

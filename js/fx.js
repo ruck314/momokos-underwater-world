@@ -806,8 +806,10 @@
 
   /* e.draw(c, camX, camY) through the rig. (lx, ly) is the one-pixel
      step toward the light, rim an index into the theme's rim colours
-     (-1 for none) and rimA its strength. */
-  function lit(c, e, camX, camY, themeName, big, lx, ly, rim, rimA) {
+     (-1 for none) and rimA its strength. `inked` is for a character that
+     shades and outlines itself (Momoko): the rig then skips the shadow
+     outline and lays the key over her at that strength. */
+  function lit(c, e, camX, camY, themeName, big, lx, ly, rim, rimA, inked) {
     var g = getRig(big ? 1 : 0), L = LIGHT[themeName] || LIGHT.reef;
     var w = g.w, h = g.h;
     var bx = Math.round(e.x - camX) - g.pad, by = Math.round(e.y - camY) - g.pad;
@@ -836,11 +838,15 @@
     b.fillStyle = L.shade;
     b.fillRect(0, 0, w, h);
     a.globalCompositeOperation = 'source-atop';
+    if (inked) a.globalAlpha = inked;
     a.drawImage(g.keys[themeName] || g.keys.reef, 0, 0, w, h);
+    a.globalAlpha = 1;
     a.globalCompositeOperation = 'source-over';
-    c.drawImage(g.b, bx - 1, by, w, h);
-    c.drawImage(g.b, bx + 1, by, w, h);
-    c.drawImage(g.b, bx - lx, by - ly, w, h);
+    if (!inked) {
+      c.drawImage(g.b, bx - 1, by, w, h);
+      c.drawImage(g.b, bx + 1, by, w, h);
+      c.drawImage(g.b, bx - lx, by - ly, w, h);
+    }
     if (rim >= 0) {
       var ga = c.globalAlpha;
       c.globalAlpha = ga * rimA;

@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v2.1.0';
+  Game.VERSION = 'v2.2.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -1237,7 +1237,7 @@
         if (!lx && !ly) ly = -1;
       }
     }
-    Game.fx.lit(ctx, e, camera.x, camera.y, level.theme, big, lx, ly, rim, rimA);
+    Game.fx.lit(ctx, e, camera.x, camera.y, level.theme, big, lx, ly, rim, rimA, e === player ? 0.45 : 0);
   }
 
   /* The trench shadow is built on an offscreen layer so more than one
@@ -1399,28 +1399,31 @@
       var v = Math.sin((seed + n * 12.9898) * 78.233) * 43758.5453;
       return v - Math.floor(v);
     }
-    var L = { pal: activeRockPalettes[Math.floor(rand() * activeRockPalettes.length)], pts: [], topN: 0, patches: [], dots: [], barnacles: [], grow: [] };
+    var L = { pal: activeRockPalettes[Math.floor(rand() * activeRockPalettes.length)], pts: [], topN: 0, patches: [], barnacles: [], grow: [] };
     var r = Math.min(16, pw * 0.35, ph * 0.45);
     var amp = Math.min(6, Math.min(pw, ph) * 0.12);
 
     /* Outline: rounded rect traced clockwise with a little lumpy noise.
        Top edge first (its point count is kept for the rim highlight). */
-    var steps = Math.max(3, Math.round((pw - 2 * r) / 12));
+    var steps = Math.max(3, Math.round((pw - 2 * r) / 8));
     var a, k;
     for (k = 0; k <= 4; k++) {
       a = Math.PI + (k / 4) * Math.PI / 2;
       L.pts.push([r + Math.cos(a) * r, r + Math.sin(a) * r]);
     }
     for (k = 1; k < steps; k++) {
-      L.pts.push([r + (pw - 2 * r) * k / steps, (rand() - 0.6) * amp]);
+      L.pts.push([r + (pw - 2 * r) * k / steps, (rand() - 0.6) * amp * 1.4]);
     }
     for (k = 0; k <= 4; k++) {
       a = -Math.PI / 2 + (k / 4) * Math.PI / 2;
       L.pts.push([pw - r + Math.cos(a) * r, r + Math.sin(a) * r]);
     }
     L.topN = L.pts.length;
-    var side = Math.max(1, Math.round((ph - 2 * r) / 14));
-    for (k = 1; k < side; k++) L.pts.push([pw + (rand() - 0.5) * amp, r + (ph - 2 * r) * k / side]);
+    /* Knobbly flanks: jitter plus a slow bulge so pillars don't read as
+       candles */
+    var side = Math.max(1, Math.round((ph - 2 * r) / 9));
+    var bulge = rand() * 6;
+    for (k = 1; k < side; k++) L.pts.push([pw + (rand() - 0.5) * amp * 1.5 + Math.sin(k * 0.9 + bulge) * amp * 0.5, r + (ph - 2 * r) * k / side]);
     if (grounded) {
       /* Sink the base into the sand so it reads as rooted */
       L.pts.push([pw + 1, ph + 4], [-1, ph + 4]);
@@ -1435,7 +1438,7 @@
         L.pts.push([r + Math.cos(a) * r, ph - r + Math.sin(a) * r]);
       }
     }
-    for (k = side - 1; k >= 1; k--) L.pts.push([(rand() - 0.5) * amp, r + (ph - 2 * r) * k / side]);
+    for (k = side - 1; k >= 1; k--) L.pts.push([(rand() - 0.5) * amp * 1.5 - Math.sin(k * 0.8 + bulge * 1.7) * amp * 0.5, r + (ph - 2 * r) * k / side]);
     /* Grounded rocks taper a little toward the top like a reef mound */
     if (grounded) {
       for (k = 0; k < L.pts.length; k++) {
@@ -1443,15 +1446,11 @@
       }
     }
 
-    /* Crust patches and polyp dots, clipped to the body when drawn */
+    /* Crust patches, clipped to the body when drawn */
     var area = pw * ph;
     var np = Math.max(2, Math.min(9, Math.round(area / 900)));
     for (k = 0; k < np; k++) {
       L.patches.push({ x: rand() * pw, y: ph * (0.1 + rand() * 0.8), rx: 4 + rand() * Math.min(10, pw * 0.2), ry: 2.5 + rand() * 4, col: L.pal.patch[k % 3], rot: rand() * 3 });
-    }
-    var nd = Math.max(4, Math.min(30, Math.round(area / 220)));
-    for (k = 0; k < nd; k++) {
-      L.dots.push({ x: 3 + rand() * (pw - 6), y: 5 + rand() * (ph - 8), r: 0.8 + rand() * 1.4 });
     }
     var nb = Math.max(2, Math.min(12, Math.round((pw + ph) / 30)));
     for (k = 0; k < nb; k++) {
@@ -1492,105 +1491,206 @@
     c.closePath();
   }
 
-  /* Coral-encrusted reef rock used as a collision platform. Gradient
-     body with a sunlit upper-left, crust patches, polyp dots, barnacles,
-     a rim highlight along the top and swaying growths on the crown; the
-     lower part falls off into the blue so tall pillars feel deep. */
+  /* Coral-encrusted reef rock used as a collision platform. The body is
+     painted once into its own canvas at the backing store's resolution
+     (see paintReefBody) and blitted; per frame only the sunlight net on
+     its crown and the swaying growths are drawn live. */
+  var bakeS = 1;
   function drawRockPlatform(c, px, py, pw, ph, seed, grounded, t) {
     var key = seed + ',' + py + ',' + pw + ',' + ph;
     var L = reefCache[key] || (reefCache[key] = buildReefLayout(pw, ph, seed * 0.37 + ph, grounded));
-    var pal = L.pal;
     var k;
+    if (!L.cv || L.cvS !== bakeS) {
+      var P = 12;
+      L.cv = document.createElement('canvas');
+      L.cv.width = Math.ceil((pw + P * 2) * bakeS);
+      L.cv.height = Math.ceil((ph + P * 2) * bakeS);
+      L.cvS = bakeS;
+      L.P = P;
+      var bc = L.cv.getContext('2d');
+      bc.setTransform(bakeS, 0, 0, bakeS, P * bakeS, P * bakeS);
+      paintReefBody(bc, L, pw, ph, grounded, seed);
+    }
+    c.drawImage(L.cv, px - L.P, py - L.P, pw + L.P * 2, ph + L.P * 2);
+    /* The light net from the surface plays over the crown */
+    if (!level.dark && Game.FX.caustics) {
+      c.save();
+      var band = Math.min(ph * 0.5, 30);
+      traceReef(c, px, py, L.pts);
+      c.clip();
+      c.beginPath();
+      c.rect(px - 4, py - 8, pw + 8, band + 8);
+      c.clip();
+      Game.fx.drawCaustics(c, camera.x, t * 0.001, px - 4, px + pw + 4, py - 6, py + band, 0.4);
+      c.restore();
+    }
     c.save();
-
-    if (grounded) {
-      c.fillStyle = 'rgba(4, 14, 26, 0.4)';
-      c.beginPath();
-      c.ellipse(px + pw / 2, py + ph + 2, pw * 0.6, 5, 0, 0, Math.PI * 2);
-      c.fill();
-    }
-
-    /* Body */
-    var g = c.createLinearGradient(0, py, 0, py + ph);
-    g.addColorStop(0, pal.light);
-    g.addColorStop(0.45, pal.mid);
-    g.addColorStop(1, pal.dark);
-    c.fillStyle = g;
-    traceReef(c, px, py, L.pts);
-    c.fill();
-
-    c.save();
-    c.clip();
-    for (k = 0; k < L.patches.length; k++) {
-      var pa = L.patches[k];
-      c.globalAlpha = 0.3;
-      c.fillStyle = pa.col;
-      c.beginPath();
-      c.ellipse(px + pa.x, py + pa.y, pa.rx, pa.ry, pa.rot, 0, Math.PI * 2);
-      c.fill();
-    }
-    /* Polyp bumps (light) alternating with pits (dark) for texture */
-    for (k = 0; k < L.dots.length; k++) {
-      var d = L.dots[k];
-      c.globalAlpha = k % 2 ? 0.3 : 0.5;
-      c.fillStyle = k % 2 ? '#2a0f30' : pal.rim;
-      c.beginPath();
-      c.arc(px + d.x, py + d.y, d.r, 0, Math.PI * 2);
-      c.fill();
-    }
-    c.globalAlpha = 1;
-    /* Sphere-lit sheen from the upper-left */
-    var hr = Math.max(pw, ph) * 0.8;
-    var hg = c.createRadialGradient(px + pw * 0.3, py + Math.min(ph * 0.25, 14), 2, px + pw * 0.3, py + Math.min(ph * 0.25, 14), hr);
-    hg.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-    hg.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    c.fillStyle = hg;
-    c.fillRect(px - 2, py - 6, pw + 4, ph + 12);
-    /* Light falloff toward the base */
-    var fg = c.createLinearGradient(0, py + Math.min(ph * 0.35, 24), 0, py + ph + 4);
-    fg.addColorStop(0, 'rgba(8, 26, 52, 0)');
-    fg.addColorStop(1, 'rgba(8, 26, 52, 0.6)');
-    c.fillStyle = fg;
-    c.fillRect(px - 2, py - 6, pw + 4, ph + 12);
-    c.restore();
-
-    /* Rim highlight along the top edge, soft outline all round */
-    c.strokeStyle = 'rgba(20, 8, 30, 0.35)';
-    c.lineWidth = 1;
-    traceReef(c, px, py, L.pts);
-    c.stroke();
-    c.strokeStyle = pal.rim;
-    c.globalAlpha = 0.75;
-    c.lineWidth = 2;
-    c.lineCap = 'round';
-    c.beginPath();
-    for (k = 1; k < L.topN - 1; k++) {
-      var p0 = L.pts[k], p1 = L.pts[k + 1];
-      var mx = px + (p0[0] + p1[0]) / 2, my = py + (p0[1] + p1[1]) / 2 + 1;
-      if (k === 1) c.moveTo(mx, my); else c.lineTo(mx, my);
-    }
-    c.stroke();
-    c.globalAlpha = 1;
-
-    /* Barnacles – cream cones with a dark opening */
-    for (k = 0; k < L.barnacles.length; k++) {
-      var b = L.barnacles[k];
-      c.fillStyle = '#f2e8d4';
-      c.beginPath();
-      c.arc(px + b.x, py + b.y, b.r, 0, Math.PI * 2);
-      c.fill();
-      c.fillStyle = '#5d5048';
-      c.beginPath();
-      c.arc(px + b.x, py + b.y - b.r * 0.15, b.r * 0.4, 0, Math.PI * 2);
-      c.fill();
-    }
-
-    /* Crown growths */
     for (k = 0; k < L.grow.length; k++) {
       var gr = L.grow[k];
       drawReefGrowth(c, px + gr.x, py + 2, gr, Math.sin(t * 0.0013 + gr.ph));
     }
     c.restore();
+  }
+
+  function rgbaOf(hex, a) {
+    var n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+
+  /* The rock body, at (0, 0): stratified stone lit from the surface,
+     crusted with lumpy coral patches and a dense skin of polyp cups that
+     catch the light on their upper lips, rounding into shadow at the
+     flanks and sinking into deep blue at the foot. */
+  function paintReefBody(c, L, pw, ph, grounded, seed) {
+    var pal = L.pal, k, i;
+    var s = (Math.abs(seed * 7919 + pw * 31 + ph * 17) >>> 0) || 1;
+    function r() { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }
+    var body = function () { traceReef(c, 0, 0, L.pts); };
+
+    if (grounded) {
+      /* contact shadow pooling on the sand around the foot */
+      var sg = c.createRadialGradient(pw / 2, ph + 2, 1, pw / 2, ph + 2, pw * 0.75);
+      sg.addColorStop(0, 'rgba(4, 12, 34, 0.55)');
+      sg.addColorStop(1, 'rgba(4, 12, 34, 0)');
+      c.save();
+      c.translate(0, ph + 2);
+      c.scale(1, 0.14);
+      c.translate(0, -(ph + 2));
+      c.fillStyle = sg;
+      c.fillRect(-pw * 0.3, ph + 2 - pw * 0.8, pw * 1.6, pw * 1.6);
+      c.restore();
+    }
+
+    var g = c.createLinearGradient(0, 0, 0, ph);
+    g.addColorStop(0, pal.light);
+    g.addColorStop(0.45, pal.mid);
+    g.addColorStop(1, pal.dark);
+    c.fillStyle = g;
+    body();
+    c.fill();
+
+    c.save();
+    body();
+    c.clip();
+    /* Lumpy crust patches: clusters of overlapping blobs */
+    for (k = 0; k < L.patches.length; k++) {
+      var pa = L.patches[k];
+      c.fillStyle = rgbaOf(pa.col, 0.22);
+      for (i = 0; i < 5; i++) {
+        c.beginPath();
+        c.ellipse(pa.x + (r() - 0.5) * pa.rx * 1.6, pa.y + (r() - 0.5) * pa.ry * 1.6, pa.rx * (0.45 + r() * 0.4), pa.ry * (0.6 + r() * 0.5), pa.rot, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    /* Strata: wavy ledges, each a lit lip over a shadowed undercut */
+    var nL = Math.max(1, Math.round(ph / 24));
+    for (k = 0; k < nL; k++) {
+      var ly = ph * (0.18 + 0.74 * (k + 0.3 + r() * 0.4) / nL);
+      var ph1 = r() * 6, amp = 1.5 + r() * 2;
+      var pts = [];
+      for (var x = -2; x <= pw + 2; x += 3) pts.push([x, ly + Math.sin(x * 0.11 + ph1) * amp + Math.sin(x * 0.37 + ph1 * 2) * 0.8]);
+      var under = c.createLinearGradient(0, ly, 0, ly + 6);
+      under.addColorStop(0, rgbaOf(pal.dark, 0.32));
+      under.addColorStop(1, rgbaOf(pal.dark, 0));
+      c.fillStyle = under;
+      c.beginPath();
+      c.moveTo(pts[0][0], pts[0][1]);
+      for (i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+      for (i = pts.length - 1; i >= 0; i--) c.lineTo(pts[i][0], pts[i][1] + 6);
+      c.closePath();
+      c.fill();
+      c.beginPath();
+      c.moveTo(pts[0][0], pts[0][1] - 0.6);
+      for (i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1] - 0.6);
+      c.strokeStyle = rgbaOf(pal.rim, 0.4);
+      c.lineWidth = 1;
+      c.stroke();
+    }
+    /* Polyp cups on a jittered grid: dark cup, lit upper lip, pit */
+    var step = 4.6;
+    for (var gy = 3; gy < ph + 2; gy += step) {
+      for (var gx = 2 + ((gy / step) % 2) * step / 2; gx < pw; gx += step) {
+        if (r() < 0.22) continue;
+        var cx = gx + (r() - 0.5) * 2.6, cy = gy + (r() - 0.5) * 2.6, cr = 0.9 + r() * 1.2;
+        var depth = cy / ph;
+        c.fillStyle = rgbaOf(pal.dark, 0.3 + depth * 0.15);
+        c.beginPath();
+        c.ellipse(cx, cy + 0.35, cr, cr * 0.8, 0, 0, Math.PI * 2);
+        c.fill();
+        c.strokeStyle = rgbaOf(pal.rim, 0.5 * (1 - depth * 0.7));
+        c.lineWidth = 0.7;
+        c.beginPath();
+        c.arc(cx, cy, cr * 0.95, Math.PI * 1.1, Math.PI * 1.9);
+        c.stroke();
+      }
+    }
+    /* Rounded flanks: shadow wrapping both sides, deeper away from the sun */
+    var cyl = c.createLinearGradient(0, 0, pw, 0);
+    cyl.addColorStop(0, 'rgba(10, 20, 60, 0.32)');
+    cyl.addColorStop(0.22, 'rgba(10, 20, 60, 0)');
+    cyl.addColorStop(0.62, 'rgba(10, 20, 60, 0)');
+    cyl.addColorStop(1, 'rgba(10, 20, 60, 0.42)');
+    c.fillStyle = cyl;
+    c.fillRect(-4, -8, pw + 8, ph + 16);
+    /* Sun on the crown */
+    var top = c.createLinearGradient(0, -4, 0, Math.min(ph * 0.4, 28));
+    top.addColorStop(0, 'rgba(255, 250, 226, 0.42)');
+    top.addColorStop(1, 'rgba(255, 250, 226, 0)');
+    c.fillStyle = top;
+    c.fillRect(-4, -8, pw + 8, ph + 16);
+    /* Falling into the blue toward the foot */
+    var fg = c.createLinearGradient(0, Math.min(ph * 0.3, 22), 0, ph + 4);
+    fg.addColorStop(0, 'rgba(8, 26, 60, 0)');
+    fg.addColorStop(1, grounded ? 'rgba(6, 18, 48, 0.68)' : 'rgba(8, 26, 60, 0.55)');
+    c.fillStyle = fg;
+    c.fillRect(-4, -8, pw + 8, ph + 16);
+    /* Cool water light bouncing off the flanks */
+    var bounce = c.createLinearGradient(0, 0, 0, ph);
+    bounce.addColorStop(0, 'rgba(140, 220, 255, 0)');
+    bounce.addColorStop(0.4, 'rgba(140, 220, 255, 0.3)');
+    bounce.addColorStop(1, 'rgba(140, 220, 255, 0.05)');
+    c.strokeStyle = bounce;
+    c.lineWidth = 2.4;
+    body();
+    c.stroke();
+    c.restore();
+
+    /* Soft outline, lit lip along the crown */
+    c.strokeStyle = 'rgba(16, 8, 34, 0.45)';
+    c.lineWidth = 1;
+    body();
+    c.stroke();
+    c.strokeStyle = pal.rim;
+    c.globalAlpha = 0.85;
+    c.lineWidth = 1.8;
+    c.lineCap = 'round';
+    c.beginPath();
+    for (k = 1; k < L.topN - 1; k++) {
+      var p0 = L.pts[k], p1 = L.pts[k + 1];
+      var mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2 + 1;
+      if (k === 1) c.moveTo(mx, my); else c.lineTo(mx, my);
+    }
+    c.stroke();
+    c.globalAlpha = 1;
+
+    /* Barnacles: shaded cream cones with a dark opening */
+    for (k = 0; k < L.barnacles.length; k++) {
+      var b = L.barnacles[k];
+      var bg = c.createRadialGradient(b.x - b.r * 0.4, b.y - b.r * 0.5, 0.2, b.x, b.y, b.r * 1.1);
+      bg.addColorStop(0, '#fffaf0');
+      bg.addColorStop(1, '#b8a890');
+      c.fillStyle = bg;
+      c.beginPath();
+      c.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = 'rgba(60, 40, 40, 0.5)';
+      c.lineWidth = 0.5;
+      c.stroke();
+      c.fillStyle = '#4d4048';
+      c.beginPath();
+      c.arc(b.x, b.y - b.r * 0.15, b.r * 0.4, 0, Math.PI * 2);
+      c.fill();
+    }
   }
 
   /* One growth on a reef crown. `sway` is -1..1. */
@@ -2623,6 +2723,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
     Game.fx.setScale(dpr);
+    bakeS = Math.min(2, dpr);
   }
 
   /* ---- Init ---- */

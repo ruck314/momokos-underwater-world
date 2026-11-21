@@ -657,33 +657,89 @@
   }
 
   /* ---- HUD ---- */
-  function drawHUD(c, player, pearls, pearlTotal) {
-    /* Hearts on a soft plate so sprites drifting past never swallow them */
-    c.fillStyle = 'rgba(4, 18, 40, 0.72)';
-    roundRect(c, 3, 5, player.maxHealth * 28 + 2, 28, 14);
+  /* HUD plate: smoked glass with a bevelled rim, lit along its top
+     edge, casting a soft shadow on the scene behind it. */
+  function hudPlate(c, x, y, w, h) {
+    var r = h / 2;
+    c.fillStyle = 'rgba(0, 6, 20, 0.28)';
+    roundRect(c, x - 1, y + 1.5, w + 2, h + 2, r + 1);
     c.fill();
-    c.strokeStyle = 'rgba(124, 232, 255, 0.35)';
-    c.lineWidth = 1;
+    var g = c.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, 'rgba(22, 64, 112, 0.86)');
+    g.addColorStop(0.5, 'rgba(6, 26, 58, 0.86)');
+    g.addColorStop(1, 'rgba(4, 16, 40, 0.9)');
+    c.fillStyle = g;
+    roundRect(c, x, y, w, h, r);
+    c.fill();
+    /* glass sheen over the top half */
+    var sh = c.createLinearGradient(0, y + 1, 0, y + h * 0.5);
+    sh.addColorStop(0, 'rgba(190, 240, 255, 0.22)');
+    sh.addColorStop(1, 'rgba(190, 240, 255, 0)');
+    c.fillStyle = sh;
+    roundRect(c, x + 2, y + 1.5, w - 4, h * 0.5, r - 2);
+    c.fill();
+    var rim = c.createLinearGradient(0, y, 0, y + h);
+    rim.addColorStop(0, 'rgba(160, 240, 255, 0.85)');
+    rim.addColorStop(0.55, 'rgba(90, 190, 240, 0.35)');
+    rim.addColorStop(1, 'rgba(60, 140, 210, 0.55)');
+    c.strokeStyle = rim;
+    c.lineWidth = 1.2;
+    roundRect(c, x + 0.5, y + 0.5, w - 1, h - 1, r - 0.5);
     c.stroke();
+  }
+
+  var hudPearls = -1, hudPop = 0, hudHealth = -1, hudHurt = 0;
+  function drawHUD(c, player, pearls, pearlTotal) {
+    /* Short pops when a pearl is picked up or a heart is lost */
+    if (hudPearls >= 0 && pearls > hudPearls) hudPop = 1;
+    hudPearls = pearls;
+    if (hudHealth >= 0 && player.health !== hudHealth) hudHurt = 1;
+    hudHealth = player.health;
+    hudPop = Math.max(0, hudPop - 0.06);
+    hudHurt = Math.max(0, hudHurt - 0.05);
+    var now = Date.now() * 0.001;
+
+    /* Hearts on a glass plate so sprites drifting past never swallow them */
+    hudPlate(c, 3, 5, player.maxHealth * 28 + 2, 28);
     for (var i = 0; i < player.maxHealth; i++) {
       var hx = 17 + i * 28;
       var hy = 21;
-      /* Dark rim */
-      c.fillStyle = 'rgba(30, 6, 18, 0.85)';
-      drawHeart(c, hx, hy + 0.5, 12.5);
-      if (i < player.health) {
-        /* Full heart with a glossy highlight */
-        c.fillStyle = '#ff3355';
+      var full = i < player.health;
+      /* The last heart beats when she is down to one or two */
+      var beat = full && i === player.health - 1 && player.health <= 2 ? 1 + Math.max(0, Math.sin(now * 7)) * 0.12 : 1;
+      if (i === player.health && hudHurt > 0) beat = 1 + hudHurt * 0.35;
+      c.save();
+      c.translate(hx, hy - 1);
+      c.scale(beat, beat);
+      c.translate(-hx, -(hy - 1));
+      /* Ink rim */
+      c.fillStyle = full ? '#4a0a20' : 'rgba(14, 6, 28, 0.9)';
+      drawHeart(c, hx, hy + 0.6, 12.6);
+      if (full) {
+        var hg = c.createLinearGradient(0, hy - 9, 0, hy + 4);
+        hg.addColorStop(0, '#ff8aa4');
+        hg.addColorStop(0.45, '#ff3a5c');
+        hg.addColorStop(1, '#c0123a');
+        c.fillStyle = hg;
         drawHeart(c, hx, hy, 10);
-        c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        /* gloss and a pinpoint glint */
+        c.fillStyle = 'rgba(255, 255, 255, 0.6)';
         c.beginPath();
-        c.ellipse(hx - 4, hy - 5.5, 2.4, 1.6, -0.5, 0, Math.PI * 2);
+        c.ellipse(hx - 4, hy - 5.4, 2.6, 1.6, -0.5, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = '#ffffff';
+        c.beginPath();
+        c.arc(hx - 5.2, hy - 6, 0.8, 0, Math.PI * 2);
         c.fill();
       } else {
-        /* Empty heart */
-        c.fillStyle = '#4a3550';
+        /* Empty socket, shadowed inside */
+        var eg = c.createLinearGradient(0, hy - 9, 0, hy + 4);
+        eg.addColorStop(0, '#1e1430');
+        eg.addColorStop(1, '#4a3a62');
+        c.fillStyle = eg;
         drawHeart(c, hx, hy, 10);
       }
+      c.restore();
     }
 
     /* Pearl counter beside the hearts: icon plus "12/30" */
@@ -694,20 +750,21 @@
       var tw = c.measureText(text).width;
       var px = 3 + player.maxHealth * 28 + 2 + 8;
       var pw = tw + 36;
-      c.fillStyle = 'rgba(4, 18, 40, 0.72)';
-      roundRect(c, px, 5, pw, 28, 14);
-      c.fill();
-      c.strokeStyle = 'rgba(124, 232, 255, 0.35)';
-      c.lineWidth = 1;
-      c.stroke();
-      drawPearlIcon(c, px + 15, 19, 8);
+      hudPlate(c, px, 5, pw, 28);
+      /* soft glow behind the pearl, flaring on a pickup */
+      var gl = c.createRadialGradient(px + 15, 19, 1, px + 15, 19, 13 + hudPop * 5);
+      gl.addColorStop(0, 'rgba(255, 236, 250, ' + (0.35 + hudPop * 0.4) + ')');
+      gl.addColorStop(1, 'rgba(255, 236, 250, 0)');
+      c.fillStyle = gl;
+      c.fillRect(px - 4, 0, 38, 38);
+      drawPearlIcon(c, px + 15, 19, 8 * (1 + hudPop * 0.25));
       c.textAlign = 'left';
       c.textBaseline = 'middle';
       c.lineJoin = 'round';
       c.lineWidth = 3;
       c.strokeStyle = 'rgba(30, 6, 18, 0.85)';
       c.strokeText(text, px + 29, 20);
-      c.fillStyle = '#ffffff';
+      c.fillStyle = hudPop > 0 ? 'rgb(255,' + Math.round(255 - hudPop * 50) + ',' + Math.round(255 - hudPop * 120) + ')' : '#ffffff';
       c.fillText(text, px + 29, 20);
       c.restore();
     }
@@ -2521,7 +2578,8 @@
        sprite height (34) to plant feet on the ground line. */
     if (Game.entities && Game.entities.drawMomokoSprite) {
       var frame = mm.moving ? Math.floor(mm.walkPhase) : 0;
-      Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, frame);
+      Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, frame,
+        { t: Date.now() * 0.001, fwd: mm.moving ? 1.8 : 0, vy: mm.grounded ? 0 : mm.vy * 0.4 });
     }
     /* Companion crab trails behind her opposite facing direction */
     if (Game.entities && Game.entities.drawCrabPet &&
