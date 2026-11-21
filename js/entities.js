@@ -46,6 +46,10 @@
     this.animTimer = 0;
     this.shootCooldown = 0;
     this.alive = true;
+    /* Turbo: seconds the arrows have been held, the main direction held
+       (for spotting a reversal) and the speed factor (1..2) */
+    this.turboT = 0; this.turboH = 0; this.turboV = 0;
+    this.boost = 1;
     /* Animation state (pose, springs, blinks, kick bubbles); drawing only */
     this.rig = Game.hero ? new Game.hero.Rig(Momoko.DRAW_SCALE) : null;
     if (this.rig) this.rig.emits = true;
@@ -57,15 +61,48 @@
   Momoko.FRICTION = 0.94;
   Momoko.INVINCIBLE_TIME = 90; /* frames (~1.5s) */
   Momoko.SHOOT_CD = 12;
+  Momoko.TURBO_START = 5;  /* s held before the boost starts */
+  Momoko.TURBO_FULL = 10;  /* s held to reach 2x */
+
+  /* Turbo speed multiplier for a hold of t seconds: 1x until 5 s, then
+     a smoothstep ramp to 2x at 10 s (shared with the beach walk) */
+  Momoko.turboMul = function (t) {
+    var u = Math.max(0, Math.min(1, (t - Momoko.TURBO_START) / (Momoko.TURBO_FULL - Momoko.TURBO_START)));
+    return 1 + u * u * (3 - 2 * u);
+  };
+
+  /* Start the hold timer over (dive back in, respawn); the speed
+     factor still eases down instead of snapping */
+  Momoko.prototype.resetTurbo = function () {
+    this.turboT = 0; this.turboH = 0; this.turboV = 0;
+  };
 
   Momoko.prototype.update = function (keys, level) {
     if (!this.alive) return;
 
+    /* Turbo: any arrows held continuously keep the timer counting.
+       Letting go of all of them, or reversing the main direction (the
+       horizontal one if she swims sideways at all), starts it over. */
+    var hx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0), hy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+    if ((!hx && !hy) || (hx && hx === -this.turboH) || (!hx && !this.turboH && hy && hy === -this.turboV)) this.resetTurbo();
+    else {
+      var was = this.turboT;
+      this.turboT += 1 / 60;
+      if (was < Momoko.TURBO_START && this.turboT >= Momoko.TURBO_START) Game.audio.play('whoosh');
+    }
+    if (hx) this.turboH = hx;
+    if (hy) this.turboV = hy;
+    /* Speed factor follows the ramp up; on release it eases back to 1x
+       over ~0.25 s so she doesn't stop dead */
+    var mul = Momoko.turboMul(this.turboT);
+    this.boost = mul >= this.boost ? mul : Math.max(mul, this.boost - 1 / 15);
+    var force = Momoko.SWIM_FORCE * this.boost, maxVel = Momoko.MAX_VEL * this.boost;
+
     /* Swimming */
-    if (keys.left) { this.vx -= Momoko.SWIM_FORCE; this.facing = -1; }
-    if (keys.right) { this.vx += Momoko.SWIM_FORCE; this.facing = 1; }
-    if (keys.up) this.vy -= Momoko.SWIM_FORCE;
-    if (keys.down) this.vy += Momoko.SWIM_FORCE;
+    if (keys.left) { this.vx -= force; this.facing = -1; }
+    if (keys.right) { this.vx += force; this.facing = 1; }
+    if (keys.up) this.vy -= force;
+    if (keys.down) this.vy += force;
 
     /* Gravity (gentle sinking) */
     this.vy += Momoko.GRAVITY;
@@ -76,35 +113,39 @@
 
     /* Clamp velocity */
     var speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    if (speed > Momoko.MAX_VEL) {
-      this.vx = (this.vx / speed) * Momoko.MAX_VEL;
-      this.vy = (this.vy / speed) * Momoko.MAX_VEL;
+    if (speed > maxVel) {
+      this.vx = (this.vx / speed) * maxVel;
+      this.vy = (this.vy / speed) * maxVel;
     }
 
-    /* Apply velocity */
-    this.x += this.vx;
-    this.y += this.vy;
+    /* Apply velocity, in substeps of at most normal top speed while
+       boosted so she can't tunnel into rocks or the ship's decks */
+    var n = Math.ceil(Math.max(Math.abs(this.vx), Math.abs(this.vy)) / Momoko.MAX_VEL) || 1;
+    for (var sub = 0; sub < n; sub++) {
+      this.x += this.vx / n;
+      this.y += this.vy / n;
 
-    /* World bounds */
-    if (this.x < 0) { this.x = 0; this.vx = 0; }
-    if (this.x + this.w > level.width) { this.x = level.width - this.w; this.vx = 0; }
-    if (this.y + this.h > level.floorY) { this.y = level.floorY - this.h; this.vy = 0; }
+      /* World bounds */
+      if (this.x < 0) { this.x = 0; this.vx = 0; }
+      if (this.x + this.w > level.width) { this.x = level.width - this.w; this.vx = 0; }
+      if (this.y + this.h > level.floorY) { this.y = level.floorY - this.h; this.vy = 0; }
 
-    /* Platform collision */
-    for (var i = 0; i < level.platforms.length; i++) {
-      var p = level.platforms[i];
-      if (this.x + this.w > p.x && this.x < p.x + p.w &&
-          this.y + this.h > p.y && this.y < p.y + p.h) {
-        /* Push out from smallest overlap side */
-        var overlapL = (this.x + this.w) - p.x;
-        var overlapR = (p.x + p.w) - this.x;
-        var overlapT = (this.y + this.h) - p.y;
-        var overlapB = (p.y + p.h) - this.y;
-        var min = Math.min(overlapL, overlapR, overlapT, overlapB);
-        if (min === overlapL) { this.x = p.x - this.w; this.vx = 0; }
-        else if (min === overlapR) { this.x = p.x + p.w; this.vx = 0; }
-        else if (min === overlapT) { this.y = p.y - this.h; this.vy = 0; }
-        else { this.y = p.y + p.h; this.vy = 0; }
+      /* Platform collision */
+      for (var i = 0; i < level.platforms.length; i++) {
+        var p = level.platforms[i];
+        if (this.x + this.w > p.x && this.x < p.x + p.w &&
+            this.y + this.h > p.y && this.y < p.y + p.h) {
+          /* Push out from smallest overlap side */
+          var overlapL = (this.x + this.w) - p.x;
+          var overlapR = (p.x + p.w) - this.x;
+          var overlapT = (this.y + this.h) - p.y;
+          var overlapB = (p.y + p.h) - this.y;
+          var min = Math.min(overlapL, overlapR, overlapT, overlapB);
+          if (min === overlapL) { this.x = p.x - this.w; this.vx = 0; }
+          else if (min === overlapR) { this.x = p.x + p.w; this.vx = 0; }
+          else if (min === overlapT) { this.y = p.y - this.h; this.vy = 0; }
+          else { this.y = p.y + p.h; this.vy = 0; }
+        }
       }
     }
 
@@ -118,7 +159,7 @@
     this.animTimer++;
     if (this.animTimer > 6) { this.animTimer = 0; this.animFrame = (this.animFrame + 1) % 4; }
     if (this.rig) {
-      this.rig.step(1 / 60, { x: this.x, y: this.y, vx: this.vx, vy: this.vy, facing: this.facing, keys: keys });
+      this.rig.step(1 / 60, { x: this.x, y: this.y, vx: this.vx, vy: this.vy, facing: this.facing, keys: keys, turbo: this.boost - 1 });
     }
   };
 
@@ -141,11 +182,14 @@
     this.shootCooldown = Momoko.SHOOT_CD;
     this.react('cast');
     Game.audio.play('bubble');
-    return new Bubble(
+    var b = new Bubble(
       this.x + (this.facing === 1 ? this.w : -8),
       this.y + this.h / 2 - 4,
       this.facing
     );
+    /* Boosted, she'd outswim her own bubble; it gets the extra speed */
+    b.speed += Math.max(0, this.vx * this.facing - Momoko.MAX_VEL);
+    return b;
   };
 
   Momoko.prototype.takeDamage = function () {
@@ -175,6 +219,8 @@
     this.vx = 0; this.vy = 0;
     this.invincible = Momoko.INVINCIBLE_TIME;
     this.alive = true;
+    this.resetTurbo();
+    this.boost = 1;
   };
 
   /* ---- Shared color helpers (hoisted so sub-painters can share) ---- */

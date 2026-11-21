@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v2.6.0';
+  Game.VERSION = 'v2.7.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -647,8 +647,11 @@
           targetCamX = Math.max(player.x + player.w + 120 - W, Math.min(player.x - 80, mid));
         }
         var targetCamY = player.y - H / 2 + player.h / 2;
-        camera.x += (targetCamX - camera.x) * 0.08;
-        camera.y += (targetCamY - camera.y) * 0.08;
+        /* Follow faster while she's boosted so she trails the centre by
+           the same ~40 px at 2x as at normal speed */
+        var follow = 0.08 * player.boost;
+        camera.x += (targetCamX - camera.x) * follow;
+        camera.y += (targetCamY - camera.y) * follow;
         /* Clamp camera */
         if (camera.x < 0) camera.x = 0;
         if (camera.x > level.width - W) camera.x = level.width - W;
@@ -2591,6 +2594,7 @@
           state = State.PLAYING;
           player.y = level.waterSurface + 20;
           player.vy = 1;
+          player.resetTurbo();
         }
         break;
     }

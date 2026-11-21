@@ -134,6 +134,29 @@
     playNote(1047, 'triangle', 0.12, 0.08, sfxGain, t + 0.02);
   }
 
+  /* Turbo starting: a soft watery whoosh (filtered noise swelling and
+     sweeping up), quiet enough to sit under the music */
+  function whoosh() {
+    if (!ctx) return;
+    var t = ctx.currentTime, dur = 0.7;
+    var buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for (var i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    var src = ctx.createBufferSource();
+    src.buffer = buffer;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.6;
+    bp.frequency.setValueAtTime(380, t);
+    bp.frequency.exponentialRampToValueAtTime(1500, t + dur * 0.8);
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp); bp.connect(g); g.connect(sfxGain);
+    src.start(t);
+  }
+
   /* Treasure chest creaking open with a shower of pearls */
   function chestOpen() {
     if (!ctx) return;
@@ -249,6 +272,7 @@
         case 'pearl': pearl(); break;
         case 'chest': chestOpen(); break;
         case 'levelClear': levelClearJingle(); break;
+        case 'whoosh': whoosh(); break;
       }
     },
     startMusic: function (type, variant) {

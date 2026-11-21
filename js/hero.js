@@ -291,6 +291,9 @@
     this.ear = 0; this.earIn = 3;
     this.bubbles = []; this.mouthIn = 2.5; this.kickSign = 0;
     this.emits = false;
+    /* Turbo (0 at normal speed, 1 at 2x): longer kick, streamlined
+       lean, streaming hair and soft speed streaks in the water */
+    this.turbo = 0; this.streaks = []; this.streakIn = 0;
   }
 
   /* One-shot reactions from gameplay */
@@ -317,10 +320,11 @@
     return Math.min(1, into / 0.08) * Math.min(1, this.reactT / 0.18);
   };
 
-  /* s = { x, y (hitbox top-left), vx, vy (px per frame), facing, keys } */
+  /* s = { x, y (hitbox top-left), vx, vy (px per frame), facing, keys, turbo (0..1) } */
   Rig.prototype.step = function (dt, s) {
     var keys = s.keys || {};
     this.t += dt;
+    var T = this.turbo = s.turbo || 0;
     this.x = s.x; this.y = s.y;
     var vx = s.vx || 0, vy = s.vy || 0;
     this.vx = vx; this.vy = vy;
@@ -373,27 +377,31 @@
     target -= 0.4 * this.brake;
     if (this.turnT < 1) target -= 0.4 * Math.sin(this.turnT * PI) * sw;
     if (this.react === 'hurt') target -= 0.3 * this.reactEnv();
+    target += 0.14 * T * glide * Math.max(0, this.hx);
     this.pitchV += (81 * (target - this.pitch) - 2 * 0.75 * 9 * this.pitchV) * dt;
     this.pitch += this.pitchV * dt;
 
-    /* Kick and stroke clocks */
-    var f = lerp(1.0, 2.2 + speed * 0.35, sw) * (1 + this.burst * 0.7);
+    /* Kick and stroke clocks. Cadence tops out at normal top speed
+       (~3.3 kicks a second); boosted, the kick gets longer instead */
+    var cs = Math.min(speed, 3.2);
+    var f = lerp(1.0, 2.2 + cs * 0.35, sw) * (1 + this.burst * 0.7);
     this.kickPh += dt * TAU * f;
-    this.kickAmp = lerp(0.25, 0.62, sw) + this.burst * 0.45;
-    this.strokePh += dt * TAU * lerp(0.7, 0.95 + speed * 0.2, sw) * (1 + this.burst * 0.5);
+    this.kickAmp = lerp(0.25, 0.62 + 0.2 * T, sw) + this.burst * 0.45;
+    this.strokePh += dt * TAU * lerp(0.7, 0.95 + cs * 0.2, sw) * (1 + this.burst * 0.5);
     var ks = Math.sin(this.kickPh) > 0 ? 1 : -1;
     if (ks !== this.kickSign) {
       this.kickSign = ks;
-      if (this.emits && sw > 0.45 && rnd() < 0.55) this.emit(ks > 0 ? 11 : 17, 35, 1, 1.2);
+      if (this.emits && sw > 0.45 && rnd() < 0.55 + 0.4 * T) this.emit(ks > 0 ? 11 : 17, 35, T > 0.5 ? 2 : 1, 1.2);
     }
 
-    /* Secondary motion, all in world space (sprite units) */
-    var dx = clamp(-vx * 1.1, -3.4, 3.4), dy = clamp(-vy * 1.0, -3, 2.4);
-    var w1 = Math.sin(this.t * 1.3) * 0.55, w2 = Math.sin(this.t * 1.7 + 1) * 0.35;
+    /* Secondary motion, all in world space (sprite units); boosted, the
+       hair streams further back and flutters */
+    var dx = clamp(-vx * 1.1, -3.4 - 2 * T, 3.4 + 2 * T), dy = clamp(-vy * 1.0, -3 - T, 2.4 + T);
+    var w1 = Math.sin(this.t * 1.3) * 0.55, w2 = Math.sin(this.t * 1.7 + 1) * 0.35 + Math.sin(this.t * 8.5) * 0.7 * T;
     springTo(this.hair[0], dx + w1 * 0.5, dy + w2 * 0.5, 7, 0.45, dt);
     springTo(this.hair[1], this.hair[0].x * 1.3 + dx * 0.5 + w1, this.hair[0].y * 1.3 + dy * 0.4 + w2, 4.6, 0.38, dt);
-    this.hair[1].x = clamp(this.hair[1].x, -6.5, 6.5);
-    this.hair[1].y = clamp(this.hair[1].y, -5.5, 4.5);
+    this.hair[1].x = clamp(this.hair[1].x, -6.5 - 2 * T, 6.5 + 2 * T);
+    this.hair[1].y = clamp(this.hair[1].y, -5.5 - T, 4.5 + T);
     springTo(this.skirt, dx * 0.6, dy * 0.7, 9, 0.5, dt);
     springTo(this.charm, dx * 0.9 + Math.sin(this.t * 2.1) * 0.3, dy * 0.9, 6, 0.3, dt);
 
@@ -433,6 +441,22 @@
       this.mouthIn -= dt;
       if (this.mouthIn <= 0) { this.mouthIn = 2.5 + rnd() * 3; this.emit(15, 18, 2, 0.6); }
     }
+    /* Speed streaks: left in the water along her body, so they trail
+       behind her as she pulls away, and fade in ~0.35 s */
+    if (this.emits && T > 0.02 && sw > 0.5 && speed > 2) {
+      this.streakIn -= dt * 18 * T;
+      while (this.streakIn <= 0) {
+        this.streakIn += 1;
+        if (this.streaks.length < 16) {
+          var sp = this.toWorld(4 + rnd() * 20, 6 + rnd() * 30);
+          this.streaks.push({ x: sp.x, y: sp.y, ux: -vx / speed, uy: -vy / speed, len: 8 + 10 * T, life: 0, max: 0.28 + rnd() * 0.14, a: T });
+        }
+      }
+    }
+    for (var j = this.streaks.length - 1; j >= 0; j--) {
+      this.streaks[j].life += dt;
+      if (this.streaks[j].life >= this.streaks[j].max) this.streaks.splice(j, 1);
+    }
     for (var i = this.bubbles.length - 1; i >= 0; i--) {
       var b = this.bubbles[i];
       b.life += dt;
@@ -462,9 +486,23 @@
     }
   };
   Rig.prototype.drawBubbles = function (c, camX, camY) {
-    var n = this.bubbles.length;
-    if (!n) return;
+    var n = this.bubbles.length, ns = this.streaks.length;
+    if (!n && !ns) return;
     c.save();
+    if (ns) {
+      c.lineCap = 'round';
+      c.lineWidth = 1.1;
+      c.strokeStyle = '#e8fbff';
+      for (var k = 0; k < ns; k++) {
+        var st = this.streaks[k], u = st.life / st.max;
+        var sx = st.x - camX, sy = st.y - camY, l = st.len * (0.6 + 0.4 * u);
+        c.globalAlpha = Math.min(1, u / 0.15) * (1 - u) * 0.5 * st.a;
+        c.beginPath();
+        c.moveTo(sx, sy);
+        c.lineTo(sx + st.ux * l, sy + st.uy * l);
+        c.stroke();
+      }
+    }
     c.lineWidth = 0.7;
     for (var i = 0; i < n; i++) {
       var b = this.bubbles[i];
@@ -583,8 +621,9 @@
     /* Wand arm: points the way she swims (lifting toward her heading
        when she swims up), thrusts on a cast */
     var F = P.armF, fwd = -PI / 2 - P.pitch * 0.85 + 0.7 * Math.min(0, Math.atan2(R.hy, R.hx)) * sw;
-    F.a1 = lerp(-1.05 + 0.06 * Math.sin(t * 1.9 + 0.5), fwd + 0.22, sw);
-    F.a2 = lerp(-0.45 + 0.05 * Math.sin(t * 1.9), -0.22, sw);
+    /* boosted, the wand arm straightens into a streamlined reach */
+    F.a1 = lerp(-1.05 + 0.06 * Math.sin(t * 1.9 + 0.5), fwd + 0.22 - 0.12 * R.turbo, sw);
+    F.a2 = lerp(-0.45 + 0.05 * Math.sin(t * 1.9), -0.22 + 0.18 * R.turbo, sw);
     if (R.cast > 0) {
       var cu = 1 - R.cast, ck = smooth(cu / 0.12) * smooth(R.cast * 1.6);
       F.a1 = lerp(F.a1, fwd - 0.05 - 0.14 * Math.sin(clamp(cu / 0.35, 0, 1) * PI), ck);
@@ -619,10 +658,12 @@
   /* Walking on the beach: { t, fwd, vy } plus, from the beach scene,
      phase (stride clock, advanced only while she walks, so her feet
      step instead of paddling in place), air (off the ground), land (0..1 just after a
-     landing) and sx (0.5..1 width through a turn). No swim tilt. */
+     landing) and sx (0.5..1 width through a turn). No swim tilt.
+     turbo (0..1, at 2x) lengthens the stride into a run with a forward
+     lean, pumping arms and streaming hair. */
   function walkPose(P, m, frame) {
     var t = m.t !== undefined ? m.t : Date.now() * 0.001;
-    var fwd = m.fwd || 0, vy = m.vy || 0;
+    var fwd = m.fwd || 0, vy = m.vy || 0, T = m.turbo || 0;
     var walk = Math.min(1, Math.abs(fwd) / 1.8);
     var air = m.air ? clamp(0.55 - vy * 0.3, 0.2, 1) : 0, land = m.land || 0;
     P.t = t;
@@ -630,10 +671,11 @@
     P.breathe = Math.sin(t * 2.2);
     P.headY = P.breathe * 0.22;
     var ph = m.phase !== undefined ? m.phase * 1.5 : t * 9 + (frame || 0) * 0.3;
+    var reach = 0.75 * (1 + 0.35 * T);
     for (var i = 0; i < 2; i++) {
       var s = Math.sin(ph + i * PI);
-      P.legs[i].a1 = -0.75 * s * walk;
-      P.legs[i].a2 = 0.1 + 0.75 * Math.max(0, Math.sin(ph + i * PI + 0.8)) * walk;
+      P.legs[i].a1 = -reach * s * walk;
+      P.legs[i].a2 = 0.1 + (0.75 + 0.45 * T) * Math.max(0, Math.sin(ph + i * PI + 0.8)) * walk;
       P.legs[i].f = -P.legs[i].a1 - P.legs[i].a2 * 0.6;
       /* tuck in the air (front knee higher), soak up the landing */
       P.legs[i].a1 = lerp(P.legs[i].a1, i ? -0.25 : -0.6, air) - 0.35 * land;
@@ -641,20 +683,20 @@
       P.legs[i].f = lerp(P.legs[i].f, 0.25, air);
     }
     /* stance legs angle out, so drop the body to keep her feet down */
-    P.bob = 2.6 * walk * (1 - Math.cos(0.75 * Math.sin(ph))) * (1 - air) + 1.1 * land;
+    P.bob = 2.6 * walk * (1 - Math.cos(reach * Math.sin(ph))) * (1 - 0.35 * T) * (1 - air) + 1.1 * land;
     P.headY -= 0.3 * P.bob;
-    P.pitch = 0.08 * walk * (1 - air);
+    P.pitch = (0.08 + 0.12 * T) * walk * (1 - air);
     P.sq = air * clamp(-vy * 0.03, -0.03, 0.05) - 0.05 * land;
     /* relaxed arms swinging against the legs, soft elbows; the wand
        arm drops from its held-out stance as she walks */
-    P.armB.a1 = lerp(0.35 + 0.55 * Math.sin(ph) * walk, 1.6, air * 0.7);
-    P.armB.a2 = -0.3 - 0.25 * walk;
-    P.armF.a1 = lerp(P.armF.a1, -0.5 + 0.35 * Math.sin(ph + PI), walk) - 0.35 * air;
-    P.armF.a2 = lerp(P.armF.a2, -0.6, walk);
-    P.hm.x = -clamp(fwd * 0.5, -1.4, 1.4) + Math.sin(t * 2.3) * 0.3;
-    P.hm.y = clamp(-vy * 0.6, -1.4, 1.4);
+    P.armB.a1 = lerp(0.35 + (0.55 + 0.3 * T) * Math.sin(ph) * walk, 1.6, air * 0.7);
+    P.armB.a2 = -0.3 - (0.25 + 0.6 * T) * walk;
+    P.armF.a1 = lerp(P.armF.a1, -0.5 + (0.35 + 0.1 * T) * Math.sin(ph + PI), walk) - 0.35 * air;
+    P.armF.a2 = lerp(P.armF.a2, -0.6 - 0.3 * T, walk);
+    P.hm.x = -clamp(fwd * 0.5, -1.4, 1.4) * (1 + 0.8 * T) + Math.sin(t * 2.3) * 0.3;
+    P.hm.y = clamp(-vy * 0.6, -1.4, 1.4) + Math.sin(t * 9) * 0.35 * T;
     P.ht.x = P.hm.x * 1.8 + Math.sin(t * 2.3 - 0.6) * 0.4;
-    P.ht.y = P.hm.y * 1.6;
+    P.ht.y = P.hm.y * 1.6 + Math.sin(t * 9 - 0.8) * 0.4 * T;
     P.sk.y = P.hm.y * 0.5;
     P.ch.x = P.hm.x * 1.2;
     P.cr.x = P.ch.x;

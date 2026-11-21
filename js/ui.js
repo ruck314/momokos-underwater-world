@@ -2090,6 +2090,10 @@
   var BEACH_JUMP_V = -5.2;
   var BEACH_GRAVITY = 0.32;
   var BEACH_STRIDE = 0.2, BEACH_HALF_STRIDE = Math.PI / 1.5;
+  /* Turbo: cadence stops rising at ~3.3 strides a second (x1.15 her
+     walk); past that the stride lengthens. Letting go from a boost she
+     slides to a stop over ~0.25 s. */
+  var BEACH_CADENCE_MAX = 1.15, BEACH_GLIDE_DECEL = 2 * BEACH_WALK_SPEED / 15;
 
   function startBeachCutscene() {
     beachTimer = 0;
@@ -2106,6 +2110,7 @@
       sx: 1, turnFrom: 1, turnT: 1, face: 1,
       grounded: true,
       moving: false,
+      turboT: 0, turboDir: 0, boost: 1, turbo: 0, glide: 0, puffs: [],
     };
   }
 
@@ -2115,10 +2120,32 @@
     if (!beachMomoko) return;
     var m = beachMomoko;
     m.moving = false;
-    if (keys.left)  { m.x -= BEACH_WALK_SPEED; m.facing = -1; m.moving = true; }
-    if (keys.right) { m.x += BEACH_WALK_SPEED; m.facing =  1; m.moving = true; }
-    if (m.x < BEACH_MIN_X) m.x = BEACH_MIN_X;
-    if (m.x > BEACH_MAX_X) m.x = BEACH_MAX_X;
+    /* Turbo: holding one direction counts up; letting go or turning
+       around starts over at 1x */
+    var dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0), x0 = m.x;
+    if (dir && dir === m.turboDir) {
+      m.turboT += 1 / 60;
+      if (Math.abs(m.turboT - Game.entities.Momoko.TURBO_START) < 0.5 / 60) Game.audio.play('whoosh');
+    } else {
+      if (!dir && m.boost > 1) m.glide = m.turboDir * BEACH_WALK_SPEED * m.boost;
+      m.turboT = 0;
+    }
+    if (dir) m.glide = 0;
+    m.turboDir = dir;
+    m.boost = Game.entities.Momoko.turboMul(m.turboT);
+    var spd = BEACH_WALK_SPEED * m.boost;
+    if (keys.left)  { m.x -= spd; m.facing = -1; m.moving = true; }
+    if (keys.right) { m.x += spd; m.facing =  1; m.moving = true; }
+    if (m.glide) {
+      m.x += m.glide;
+      var gs = Math.max(0, Math.abs(m.glide) - BEACH_GLIDE_DECEL);
+      m.glide = m.glide > 0 ? gs : -gs;
+    }
+    if (m.x < BEACH_MIN_X) { m.x = BEACH_MIN_X; m.glide = 0; }
+    if (m.x > BEACH_MAX_X) { m.x = BEACH_MAX_X; m.glide = 0; }
+    var pace = Math.abs(m.x - x0) / BEACH_WALK_SPEED;
+    var gliding = m.glide !== 0;
+    m.turbo += ((m.moving ? m.boost - 1 : 0) - m.turbo) * (m.moving ? 1 : 0.2);
 
     /* Hop on action (space / BUBBLE). Uses justPressed so holding the
        key doesn't auto-bounce. */
@@ -2139,14 +2166,28 @@
     /* Stride clock (x1.5 in hero.js): ~2.9 strides a second at her
        walk speed, short first step, and on a stop she finishes the step
        to feet-together instead of freezing mid-stride */
-    if (m.grounded && m.moving) m.walkPhase += BEACH_STRIDE * (0.4 + 0.6 * m.walkAmt);
-    else if (m.grounded && m.walkAmt > 0.05) {
+    if (m.grounded && (m.moving || gliding)) {
+      var ph0 = m.walkPhase;
+      m.walkPhase += BEACH_STRIDE * (0.4 + 0.6 * m.walkAmt) * (m.moving ? Math.min(BEACH_CADENCE_MAX, Math.max(1, pace)) : Math.max(0.5, Math.min(1, pace)));
+      /* sand kicked up at each footfall once the boost is on */
+      if (m.turbo > 0.05 && Math.floor(m.walkPhase / BEACH_HALF_STRIDE) !== Math.floor(ph0 / BEACH_HALF_STRIDE)) {
+        for (var pi = 0; pi < 3 && m.puffs.length < 12; pi++) {
+          m.puffs.push({ x: m.x - m.facing * (4 + pi * 5), y: BEACH_GROUND_Y + 8, vx: -m.facing * (0.4 + pi * 0.35), r: 2.5 + pi, life: 0, a: Math.min(1, m.turbo * 1.5) });
+        }
+      }
+    } else if (m.grounded && m.walkAmt > 0.05) {
       var rest = Math.ceil(m.walkPhase / BEACH_HALF_STRIDE) * BEACH_HALF_STRIDE;
       m.walkPhase = Math.min(rest, m.walkPhase + BEACH_STRIDE * 0.8);
     }
     /* stride blends in and out instead of popping; a short settle on landing */
-    m.walkAmt += ((m.moving && m.grounded ? 1 : 0) - m.walkAmt) * (m.moving ? 0.25 : 0.14);
+    m.walkAmt += (((m.moving || gliding) && m.grounded ? 1 : 0) - m.walkAmt) * (m.moving ? 0.25 : 0.14);
     m.land = Math.max(0, m.land - 0.1);
+    for (var pf = m.puffs.length - 1; pf >= 0; pf--) {
+      var puff = m.puffs[pf];
+      puff.life += 1 / 24;
+      puff.x += puff.vx; puff.y -= 0.25; puff.vx *= 0.92;
+      if (puff.life >= 1) m.puffs.splice(pf, 1);
+    }
     /* Turn through a 0.2 s squash with a small dip, not a mirror snap */
     if (m.facing !== m.face) { m.face = m.facing; m.turnFrom = m.sx; m.turnT = 0; }
     if (m.turnT < 1) m.turnT = Math.min(1, m.turnT + 1 / 12);
@@ -2482,6 +2523,19 @@
      kids / beach props. The sprite's animFrame parameter drives her
      flipper/foot kick timing. */
   function drawBeachMomoko(c, mm) {
+    /* Sand puffs from her turbo footfalls */
+    if (mm.puffs.length) {
+      c.save();
+      c.fillStyle = '#f3dfb4';
+      for (var pi = 0; pi < mm.puffs.length; pi++) {
+        var pu = mm.puffs[pi];
+        c.globalAlpha = 0.55 * pu.a * (1 - pu.life) * Math.min(1, pu.life * 6);
+        c.beginPath();
+        c.arc(pu.x, pu.y, pu.r * (1 + pu.life * 1.4), 0, Math.PI * 2);
+        c.fill();
+      }
+      c.restore();
+    }
     /* Shadow on sand */
     c.save();
     c.fillStyle = 'rgba(0,0,0,0.22)';
@@ -2499,7 +2553,7 @@
     if (Game.entities && Game.entities.drawMomokoSprite) {
       Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, 0,
         { t: Date.now() * 0.001, fwd: 1.8 * mm.walkAmt, vy: mm.grounded ? 0 : mm.vy * 0.4, sx: Math.abs(mm.sx),
-          phase: mm.walkPhase, air: !mm.grounded, land: Math.max(mm.land, 0.35 * Math.sin(mm.turnT * Math.PI)) });
+          phase: mm.walkPhase, air: !mm.grounded, land: Math.max(mm.land, 0.35 * Math.sin(mm.turnT * Math.PI)), turbo: mm.turbo });
     }
     /* Companion crab trails behind her opposite facing direction */
     if (Game.entities && Game.entities.drawCrabPet &&
