@@ -1,4 +1,4 @@
-/* audio.js – Web Audio API chiptune sound effects & music */
+/* audio.js – Web Audio API sound effects; music plays through music.js */
 (function () {
   'use strict';
   window.Game = window.Game || {};
@@ -8,6 +8,7 @@
   var musicGain = null;
   var sfxGain = null;
   var currentMusic = null;
+  var player = null;
   var muted = false;
   var initialized = false;
 
@@ -22,6 +23,7 @@
       musicGain = ctx.createGain();
       musicGain.gain.value = 0.35;
       musicGain.connect(masterGain);
+      player = Game.music.createPlayer(ctx, musicGain);
 
       sfxGain = ctx.createGain();
       sfxGain.gain.value = 0.6;
@@ -144,164 +146,82 @@
     }
   }
 
-  /* Short fanfare for clearing a reef (lighter than the final victory) */
+  /* Short fanfare for clearing a reef (lighter than the final victory):
+     a kalimba run doubled by marimba, landing on a bell chord. */
   function levelClearJingle() {
     if (!ctx) return;
-    var t = ctx.currentTime;
-    var notes = [659, 784, 1047, 1319];
+    var M = Game.music, t = ctx.currentTime + 0.02;
+    var notes = ['E5', 'G5', 'C6', 'E6'];
     var dur = [0.12, 0.12, 0.12, 0.45];
     var time = t;
     for (var i = 0; i < notes.length; i++) {
-      playNote(notes[i], 'square', dur[i], 0.25, sfxGain, time);
-      playNote(notes[i] * 0.5, 'triangle', dur[i], 0.12, sfxGain, time);
+      M.voice(ctx, sfxGain, 'kalimba', notes[i], time, dur[i], 1);
+      M.voice(ctx, sfxGain, 'marimba', M.freq(notes[i]) / 2, time, dur[i], 0.8);
       time += dur[i];
     }
+    var end = time - dur[3];
+    M.voice(ctx, sfxGain, 'bell', 'G5', end, 0.6, 0.7);
+    M.voice(ctx, sfxGain, 'bell', 'C6', end, 0.6, 0.7);
+    M.voice(ctx, sfxGain, 'pluck', 'C4', end, 0.5, 0.8);
+    M.drum(ctx, sfxGain, 'tri', end, 0.8);
   }
 
+  /* Final victory: marimba and flute tune over a plucked bass, a bell
+     chord and a shimmer of triangle and shaker at the end. */
   function victoryJingle() {
     if (!ctx) return;
-    var t = ctx.currentTime;
-    var notes = [523, 587, 659, 784, 659, 784, 1047];
+    var M = Game.music, t = ctx.currentTime + 0.02;
+    var notes = ['C5', 'D5', 'E5', 'G5', 'E5', 'G5', 'C6'];
     var dur = [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.4];
+    var bass = { 0: 'C3', 2: 'G3', 4: 'C4', 6: 'C3' };
     var time = t;
     for (var i = 0; i < notes.length; i++) {
-      playNote(notes[i], 'square', dur[i], 0.3, sfxGain, time);
-      playNote(notes[i] * 0.5, 'triangle', dur[i], 0.15, sfxGain, time);
+      M.voice(ctx, sfxGain, 'marimba', notes[i], time, dur[i], 1);
+      M.voice(ctx, sfxGain, 'flute', notes[i], time, dur[i] * 0.9, 0.9);
+      if (bass[i]) M.voice(ctx, sfxGain, 'bass', bass[i], time, dur[i] * 1.6, 0.9);
+      if (i < 6) M.drum(ctx, sfxGain, 'shaker', time, 0.6);
       time += dur[i];
     }
+    var end = time - dur[6];
+    M.voice(ctx, sfxGain, 'bell', 'E6', end, 0.8, 0.6);
+    M.voice(ctx, sfxGain, 'bell', 'G6', end, 0.8, 0.5);
+    M.voice(ctx, sfxGain, 'pluck', 'E4', end, 0.6, 0.7);
+    M.voice(ctx, sfxGain, 'pluck', 'G4', end, 0.6, 0.7);
+    M.drum(ctx, sfxGain, 'tri', end, 0.9);
   }
 
+  /* Game over: a soft, sighing clarinet slide down, not a buzz */
   function gameOverSfx() {
     if (!ctx) return;
-    var t = ctx.currentTime;
-    playNote(400, 'sawtooth', 0.2, 0.3, sfxGain, t);
-    playNote(350, 'sawtooth', 0.2, 0.3, sfxGain, t + 0.2);
-    playNote(300, 'sawtooth', 0.2, 0.3, sfxGain, t + 0.4);
-    playNote(200, 'sawtooth', 0.5, 0.3, sfxGain, t + 0.6);
+    var M = Game.music, t = ctx.currentTime + 0.02;
+    var notes = ['G4', 'F4', 'D4', 'G3'];
+    for (var i = 0; i < notes.length; i++) {
+      M.voice(ctx, sfxGain, 'reed', notes[i], t + i * 0.2, i < 3 ? 0.18 : 0.5, 1, { vib: i < 3 ? 6 : 22 });
+      M.voice(ctx, sfxGain, 'marimba', notes[i], t + i * 0.2, 0.2, 0.6);
+    }
   }
 
-  /* ---- Music (looping chiptune patterns) ---- */
-  var musicInterval = null;
+  /* ---- Music (Game.music sequencer, songs in songs.js) ---- */
+  /* Song per music type; bgm and boss pick by level index */
+  var SONG_FOR = { bgm: ['reef', 'ship', 'trench'], boss: ['boss', 'boss', 'bossFinal'] };
 
-  /* Underwater BGM – calm pentatonic melody */
-  var bgmPattern = [
-    [262, 'triangle'], [330, 'triangle'], [392, 'triangle'], [330, 'triangle'],
-    [294, 'triangle'], [392, 'triangle'], [440, 'triangle'], [392, 'triangle'],
-    [330, 'triangle'], [440, 'triangle'], [523, 'triangle'], [440, 'triangle'],
-    [392, 'triangle'], [330, 'triangle'], [294, 'triangle'], [262, 'triangle'],
-    [196, 'triangle'], [262, 'triangle'], [330, 'triangle'], [262, 'triangle'],
-    [220, 'triangle'], [294, 'triangle'], [330, 'triangle'], [294, 'triangle'],
-    [262, 'triangle'], [330, 'triangle'], [392, 'triangle'], [330, 'triangle'],
-    [294, 'triangle'], [262, 'triangle'], [220, 'triangle'], [196, 'triangle'],
-  ];
+  function songName(type, variant) {
+    var list = SONG_FOR[type];
+    return list ? list[variant] || list[0] : type;
+  }
 
-  /* Bass line for BGM */
-  var bgmBass = [
-    131, 131, 196, 196, 147, 147, 196, 196,
-    165, 165, 220, 220, 196, 196, 147, 147,
-    98, 98, 131, 131, 110, 110, 147, 147,
-    131, 131, 196, 196, 147, 147, 110, 110,
-  ];
-
-  /* Boss music – ominous, faster */
-  var bossPattern = [
-    [196, 'square'], [233, 'square'], [262, 'square'], [233, 'square'],
-    [196, 'square'], [175, 'square'], [196, 'square'], [147, 'square'],
-    [175, 'square'], [208, 'square'], [233, 'square'], [208, 'square'],
-    [175, 'square'], [165, 'square'], [175, 'square'], [131, 'square'],
-    [196, 'square'], [262, 'square'], [330, 'square'], [262, 'square'],
-    [196, 'square'], [175, 'square'], [147, 'square'], [131, 'square'],
-    [147, 'square'], [175, 'square'], [196, 'square'], [175, 'square'],
-    [147, 'square'], [131, 'square'], [147, 'square'], [196, 'square'],
-  ];
-
-  var bossBass = [
-    98, 98, 131, 131, 98, 98, 87, 87,
-    87, 87, 117, 117, 87, 87, 82, 82,
-    98, 98, 131, 131, 98, 98, 87, 87,
-    73, 73, 87, 87, 73, 73, 98, 98,
-  ];
-
-  /* Title-screen music – NES-era heroic march in C major, 16th-note
-     square lead over a triangle-bass walk with a kick-hat noise pulse
-     on every beat. Two 8-bar phrases so it doesn't loop too quickly. */
-  var titlePattern = [
-    /* Phrase A */
-    [523, 'square'], [659, 'square'], [784, 'square'], [659, 'square'],
-    [784, 'square'], [1047, 'square'], [988, 'square'], [784, 'square'],
-    [880, 'square'], [1047, 'square'], [1319, 'square'], [1047, 'square'],
-    [988, 'square'], [784, 'square'], [659, 'square'], [523, 'square'],
-    /* Phrase B */
-    [698, 'square'], [880, 'square'], [1047, 'square'], [880, 'square'],
-    [1047, 'square'], [1397, 'square'], [1319, 'square'], [1047, 'square'],
-    [1175, 'square'], [988, 'square'], [784, 'square'], [587, 'square'],
-    [659, 'square'], [784, 'square'], [1047, 'square'], [784, 'square'],
-  ];
-  var titleBass = [
-    131, 131, 131, 131, 196, 196, 196, 196,
-    220, 220, 220, 220, 131, 131, 196, 196,
-    175, 175, 175, 175, 220, 220, 220, 220,
-    196, 196, 147, 147, 131, 131, 196, 131,
-  ];
-  /* 1 = kick (noise burst), 0 = nothing — NES-era drum-less synth still
-     benefits from a small noise thump on the strong beats. */
-  var titleDrums = [
-    1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0,
-    1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0,
-  ];
-
-  function startMusic(type) {
-    stopMusic();
-    if (!ctx || muted) return;
-    var pattern, bass, drums, tempo;
-    if (type === 'boss') {
-      pattern = bossPattern; bass = bossBass; drums = null; tempo = 180;
-    } else if (type === 'title') {
-      pattern = titlePattern; bass = titleBass; drums = titleDrums; tempo = 150;
-    } else {
-      pattern = bgmPattern; bass = bgmBass; drums = null; tempo = 110;
-    }
-    var beatDur = 60 / tempo;
-    var noteIdx = 0;
-
-    function scheduleNotes() {
-      if (!ctx || muted) return;
-      var t = ctx.currentTime;
-      for (var i = 0; i < 4; i++) {
-        var idx = (noteIdx + i) % pattern.length;
-        var note = pattern[idx];
-        var bNote = bass[idx];
-        var when = t + i * beatDur;
-
-        /* Melody */
-        var melodyGain = type === 'title' ? 0.13 : 0.15;
-        playNote(note[0], note[1], beatDur * 0.8, melodyGain, musicGain, when);
-        /* Title gets a subtle second square an octave lower for width */
-        if (type === 'title') {
-          playNote(note[0] * 0.5, 'square', beatDur * 0.8, 0.06, musicGain, when);
-        }
-        /* Bass */
-        playNote(bNote, 'triangle', beatDur * 0.9, 0.12, musicGain, when);
-
-        if (type === 'boss') {
-          if (idx % 4 === 0) noise(0.04, musicGain, when);
-        } else if (type === 'title' && drums && drums[idx]) {
-          noise(0.035, musicGain, when);
-        }
-      }
-      noteIdx = (noteIdx + 4) % pattern.length;
-    }
-
-    scheduleNotes();
-    musicInterval = setInterval(scheduleNotes, beatDur * 4 * 1000);
+  function startMusic(type, variant) {
+    if (!ctx || muted || !player) { stopMusic(); return; }
+    var name = songName(type, variant);
+    if (currentMusic === type && player.current() === name) return;
+    var song = Game.songs && Game.songs[name];
+    if (!song) { stopMusic(); return; }
+    player.play(song, { name: name });
     currentMusic = type;
   }
 
   function stopMusic() {
-    if (musicInterval) {
-      clearInterval(musicInterval);
-      musicInterval = null;
-    }
+    if (player) player.stop(0.4);
     currentMusic = null;
   }
 
@@ -331,9 +251,9 @@
         case 'levelClear': levelClearJingle(); break;
       }
     },
-    startMusic: function (type) {
+    startMusic: function (type, variant) {
       resume();
-      startMusic(type);
+      startMusic(type, variant);
     },
     stopMusic: stopMusic,
     toggleMute: toggleMute,

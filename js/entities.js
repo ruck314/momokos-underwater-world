@@ -227,7 +227,8 @@
       c.translate(14, 0);
       c.scale(this.facing, 1);
       c.translate(-14, 0);
-      drawCrabPet(c, -8 + 4, 32, cust.crab, this.animTimer);
+      /* animTimer wraps every 7 frames; the rig clock keeps the claws smooth */
+      drawCrabPet(c, -8 + 4, 32, cust.crab, this.rig ? this.rig.t * 60 : this.animTimer);
       c.restore();
     }
     drawMomokoSprite(c, 0, 0, cust, this.animFrame, this.rig ? { rig: this.rig } : { t: Date.now() * 0.001, fwd: 0, vy: 0 });

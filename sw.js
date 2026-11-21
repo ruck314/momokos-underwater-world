@@ -2,7 +2,7 @@
    A new CACHE_NAME forces the activate handler to purge the old cache, so
    returning visitors pick up the new bundle on their next page load. */
 var CACHE_PREFIX = 'momoko-water-';
-var CACHE_NAME = CACHE_PREFIX + 'v2.3.0';
+var CACHE_NAME = CACHE_PREFIX + 'v2.4.0';
 /* Every game on ruck314.github.io shares one Cache Storage, so only purge
    this game's own caches -- plus the old unprefixed 'momoko-vX' names. */
 function isOwnCache(n) {
@@ -18,6 +18,8 @@ var ASSETS = [
   './index.html',
   './css/style.css',
   './js/i18n.js',
+  './js/music.js',
+  './js/songs.js',
   './js/audio.js',
   './js/input.js',
   './js/fx.js',

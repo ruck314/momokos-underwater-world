@@ -294,6 +294,7 @@
   Rig.prototype.event = function (name) {
     if (name === 'cast') {
       this.cast = 1;
+      this.pitchV -= 0.9;
     } else if (name === 'hurt') {
       this.react = 'hurt'; this.reactT = this.reactDur = 0.75;
       this.pitchV -= 7;
@@ -327,7 +328,7 @@
     if (facing !== this.facing) { this.turnFrom = this.sx; this.facing = facing; this.turnT = 0; }
     if (this.turnT < 1) this.turnT = Math.min(1, this.turnT + dt / 0.16);
     var raw = lerp(this.turnFrom, this.facing, smooth(this.turnT));
-    this.sx = (raw > 0 || (raw === 0 && this.facing > 0) ? 1 : -1) * Math.max(0.3, Math.abs(raw));
+    this.sx = (raw > 0 || (raw === 0 && this.facing > 0) ? 1 : -1) * Math.max(0.42, Math.abs(raw));
 
     /* Intent, anticipation and braking */
     var ix = keys.left || keys.right ? 1 : 0;
@@ -562,8 +563,8 @@
     F.a1 = lerp(-1.05 + 0.06 * Math.sin(t * 1.9 + 0.5), fwd + 0.22, sw);
     F.a2 = lerp(-0.45 + 0.05 * Math.sin(t * 1.9), -0.22, sw);
     if (R.cast > 0) {
-      var ck = smooth(R.cast * 1.4);
-      F.a1 = lerp(F.a1, fwd - 0.05, ck);
+      var cu = 1 - R.cast, ck = smooth(cu / 0.12) * smooth(R.cast * 1.6);
+      F.a1 = lerp(F.a1, fwd - 0.05 - 0.14 * Math.sin(clamp(cu / 0.35, 0, 1) * PI), ck);
       F.a2 = lerp(F.a2, 0, ck);
     }
     if (env > 0) {
@@ -592,23 +593,36 @@
     P.ear = R.ear;
   }
 
-  /* Walking on the beach: the old {t, fwd, vy} motion, no swim tilt */
+  /* Walking on the beach: { t, fwd, vy } plus, from the beach scene,
+     phase (stride clock that advances with distance walked, so her feet
+     don't skate), air (off the ground) and land (0..1 just after a
+     landing). No swim tilt. */
   function walkPose(P, m, frame) {
     var t = m.t !== undefined ? m.t : Date.now() * 0.001;
     var fwd = m.fwd || 0, vy = m.vy || 0;
     var walk = Math.min(1, Math.abs(fwd) / 1.8);
+    var air = m.air ? clamp(0.55 - vy * 0.3, 0.2, 1) : 0, land = m.land || 0;
     P.t = t;
     P.breathe = Math.sin(t * 2.2);
     P.headY = P.breathe * 0.22;
-    var ph = t * 9 + (frame || 0) * 0.3;
+    var ph = m.phase !== undefined ? m.phase * 1.5 : t * 9 + (frame || 0) * 0.3;
     for (var i = 0; i < 2; i++) {
       var s = Math.sin(ph + i * PI);
-      P.legs[i].a1 = -0.38 * s * walk;
-      P.legs[i].a2 = 0.1 + 0.5 * Math.max(0, Math.sin(ph + i * PI + 0.8)) * walk;
+      P.legs[i].a1 = -0.6 * s * walk;
+      P.legs[i].a2 = 0.1 + 0.75 * Math.max(0, Math.sin(ph + i * PI + 0.8)) * walk;
       P.legs[i].f = -P.legs[i].a1 - P.legs[i].a2 * 0.6;
+      /* tuck in the air (front knee higher), soak up the landing */
+      P.legs[i].a1 = lerp(P.legs[i].a1, i ? -0.25 : -0.6, air) - 0.35 * land;
+      P.legs[i].a2 = lerp(P.legs[i].a2, i ? 0.55 : 1.1, air) + 0.7 * land;
+      P.legs[i].f = lerp(P.legs[i].f, 0.25, air);
     }
-    P.armB.a1 = 0.6 + 0.35 * Math.sin(ph) * walk;
-    P.armB.a2 = -0.35;
+    /* stance legs angle out, so drop the body to keep her feet down */
+    P.bob = 2.6 * walk * (1 - Math.cos(0.6 * Math.sin(ph))) * (1 - air) + 1.1 * land;
+    P.pitch = 0.08 * walk * (1 - air);
+    P.sq = air * clamp(-vy * 0.03, -0.03, 0.05) - 0.05 * land;
+    P.armB.a1 = lerp(0.6 + 0.5 * Math.sin(ph) * walk, 1.6, air * 0.7);
+    P.armB.a2 = -0.35 - 0.3 * walk;
+    P.armF.a1 += 0.12 * Math.sin(ph + PI) * walk - 0.35 * air;
     P.hm.x = -clamp(fwd * 0.5, -1.4, 1.4) + Math.sin(t * 2.3) * 0.3;
     P.hm.y = clamp(-vy * 0.6, -1.4, 1.4);
     P.ht.x = P.hm.x * 1.8 + Math.sin(t * 2.3 - 0.6) * 0.4;
@@ -1564,17 +1578,6 @@
     var dx = -Math.sin(b), dy = Math.cos(b);
     return { sx: sx, sy: sy, ex: ex, ey: ey, wx: ex + dx * 2.35, wy: ey + dy * 2.35, dx: dx, dy: dy, ang: Math.atan2(dy, dx) };
   }
-  /* A straight arm reaching from the shoulder to a point (floss) */
-  function armTo(sx, sy, hx, hy) {
-    var dx = hx - sx, dy = hy - sy;
-    var d = clamp(Math.sqrt(dx * dx + dy * dy), 1.2, 4.9);
-    var base = Math.atan2(-dx, dy);
-    var sh = Math.acos(clamp((2.6 * 2.6 + d * d - 2.35 * 2.35) / (2 * 2.6 * d), -1, 1));
-    var el = Math.acos(clamp((2.6 * 2.6 + 2.35 * 2.35 - d * d) / (2 * 2.6 * 2.35), -1, 1));
-    /* bend the elbow away from her middle */
-    var bend = dx >= 0 ? -1 : 1;
-    return armGeo(sx, sy, { a1: base - bend * sh, a2: bend * (PI - el) });
-  }
   function arm(c, P, g) {
     var skin = P.skin;
     cel(c, function () { limbPath(c, g.sx, g.sy, 1.5, g.ex, g.ey, 1.18, g.wx, g.wy, 0.92); }, skin,
@@ -2216,8 +2219,10 @@
     c.restore();
   }
 
-  /* Floss dance: hips swing one way, both straight arms the other; one
-     crosses in front of the chest, the other passes behind the hips. */
+  /* Floss dance: hips swing one way, both straight arms the other. Each
+     arm swings from its own shoulder like a pendulum: the one crossing
+     the body is drawn in front of the chest, the other behind the hips,
+     and they trade places as they pass straight down at her sides. */
   function drawFloss(c, sx, sy, cust, phase) {
     var P = basePose(cust);
     var beat = Math.tanh(Math.sin(phase) * 3.2);
@@ -2230,9 +2235,11 @@
     P.ch.x = -beat * 2.2; P.cr.x = P.ch.x;
     P.expr = 'happy';
     for (var i = 0; i < 2; i++) { P.legs[i].a1 = -beat * 0.12; P.legs[i].a2 = 0.08; P.legs[i].f = 0.1; }
-    var armDir = -beat;
-    var crossSh = 14 - armDir * 5, extSh = 14 + armDir * 5;
-    var crossHx = 14 + armDir * 10, extHx = 14 + armDir * 12;
+    var armDir = -beat, chest = hip * 0.45;
+    /* the arm crossing the body swings further than the one behind */
+    var gL = armGeo(8.8 + chest, 21.6, { a1: -armDir * (1.42 + 0.13 * armDir), a2: 0.1 * armDir });
+    var gR = armGeo(19.2 + chest, 21.6, { a1: -armDir * (1.42 - 0.13 * armDir), a2: 0.1 * armDir });
+    var front = armDir > 0 ? gL : gR, back = armDir > 0 ? gR : gL;
     c.save();
     c.translate(sx + 14, sy + 22);
     c.rotate(beat * 0.05);
@@ -2246,23 +2253,19 @@
     c.translate(hip, 0);
     legs(c, P);
     c.restore();
-    /* the far arm swings behind the hips */
-    var gE = armTo(extSh, 23.4, extHx, 27);
-    arm(c, P, gE);
-    hand(c, P, gE, 'open');
+    arm(c, P, back);
+    hand(c, P, back, 'fist');
     neck(c, P);
     c.save();
-    c.translate(hip * 0.45, 0);
+    c.translate(chest, 0);
     outfit(c, P);
     necklace(c, P);
     c.restore();
     face(c, P);
     hairFront(c, P);
     accFront(c, P);
-    /* the near arm sweeps across the chest */
-    var gC = armTo(crossSh, 21.6, crossHx, 21.2);
-    arm(c, P, gC);
-    hand(c, P, gC, 'fist');
+    arm(c, P, front);
+    hand(c, P, front, 'fist');
     c.restore();
   }
 

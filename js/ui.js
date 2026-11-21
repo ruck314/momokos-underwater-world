@@ -1980,6 +1980,8 @@
       vy: 0,
       facing: 1,
       walkPhase: 0,
+      walkAmt: 0,
+      land: 0,
       grounded: true,
       moving: false,
     };
@@ -2007,11 +2009,15 @@
     m.y += m.vy;
     if (m.y >= BEACH_GROUND_Y) {
       m.y = BEACH_GROUND_Y;
+      if (!m.grounded) m.land = 1;
       m.vy = 0;
       m.grounded = true;
     }
 
     if (m.moving && m.grounded) m.walkPhase += 0.35;
+    /* stride blends in and out instead of popping; a short settle on landing */
+    m.walkAmt += ((m.moving && m.grounded ? 1 : 0) - m.walkAmt) * 0.25;
+    m.land = Math.max(0, m.land - 0.1);
   }
 
   function drawPalmTree(c, x, groundY, scale, sway) {
@@ -2358,9 +2364,9 @@
     /* The sprite's natural origin is its top-left, so shift up by full
        sprite height (34) to plant feet on the ground line. */
     if (Game.entities && Game.entities.drawMomokoSprite) {
-      var frame = mm.moving ? Math.floor(mm.walkPhase) : 0;
-      Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, frame,
-        { t: Date.now() * 0.001, fwd: mm.moving ? 1.8 : 0, vy: mm.grounded ? 0 : mm.vy * 0.4 });
+      Game.entities.drawMomokoSprite(c, -14, -34, Game.customization, 0,
+        { t: Date.now() * 0.001, fwd: 1.8 * mm.walkAmt, vy: mm.grounded ? 0 : mm.vy * 0.4,
+          phase: mm.walkPhase, air: !mm.grounded, land: mm.land });
     }
     /* Companion crab trails behind her opposite facing direction */
     if (Game.entities && Game.entities.drawCrabPet &&

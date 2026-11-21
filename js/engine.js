@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v2.3.0';
+  Game.VERSION = 'v2.4.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -402,7 +402,7 @@
 
           /* Music transition */
           if (Game.audio.currentMusic() !== 'boss') {
-            Game.audio.startMusic('boss');
+            Game.audio.startMusic('boss', currentLevel);
           }
 
           /* Pre-fight: hero challenges first, then the boss snarls back */
@@ -2626,10 +2626,10 @@
          pop the cutscene if a stray jump carries them up. */
       beachReady = false;
       camera.x = Math.max(0, Math.min(rx - W / 2 + player.w / 2, level.width - W));
-      Game.audio.startMusic('boss');
+      Game.audio.startMusic('boss', index);
     } else {
       beachReady = true;
-      Game.audio.startMusic('bgm');
+      Game.audio.startMusic('bgm', index);
     }
     lastDeathInBoss = false;
     state = State.PLAYING;
