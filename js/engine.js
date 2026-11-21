@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v2.2.0';
+  Game.VERSION = 'v2.3.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -107,7 +107,7 @@
 
   /* ---- Customization defaults ----
      Split across two concerns: tintable colors (hair/suit/skin/flipper) and
-     swappable variants (hairStyle/outfit/shoes/crab/food). Variants are
+     swappable variants (hairStyle/outfit/shoes/crab/food/acc). Variants are
      strings that the sprite painter branches on; 'none' means skip. */
   Game.customization = {
     hair: '#e06088',
@@ -119,6 +119,7 @@
     shoes: 'maryJane',
     crab: 'none',
     food: 'none',
+    acc: 'tiara',
   };
 
   /* ---- Camera ---- */
@@ -497,6 +498,7 @@
                 Game.entities.spawnBurst(bub.x, bub.y, 5, bColors)
               );
               if (bossDefeated) {
+                player.react('cheer');
                 var vColors = ['#ff4466', '#44ff66', '#4488ff', '#ffcc33', '#ff66cc'];
                 particles = particles.concat(
                   Game.entities.spawnBurst(boss.x + boss.w / 2, boss.y + boss.h / 2, 25, vColors)
@@ -591,6 +593,7 @@
             if (pick.isPearl) {
               pick.active = false;
               pearlsCollected++;
+              player.react('happy');
               Game.audio.play('pearl');
               particles = particles.concat(
                 Game.entities.spawnBurst(pick.x + 7, pick.y + 7, 6, ['#ffffff', '#ffe0f0', '#bff4ff'])
@@ -1144,6 +1147,7 @@
         gfx.softShadow(ctx, pcx, ground - camera.y, 9 + near * 9, 2.5 + near * 2.5, (level.dark ? 0.3 : 0.55) * near);
       }
       if (!level.dark) gfx.softGlow(ctx, pcx, player.y + player.h / 2 - camera.y, 34, 0.2);
+      player.drawTrail(ctx, camera.x, camera.y);
       drawLit(player, false);
     }
 
@@ -2802,6 +2806,7 @@
     },
     _setState: function (s) { state = s; },
     _bossHp: function () { return boss ? boss.hp : -1; },
+    _player: function () { return { p: player, cam: camera }; },
   };
 
   /* Auto-init when DOM is ready */

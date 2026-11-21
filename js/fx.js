@@ -817,6 +817,7 @@
     var a = g.ax;
     a.clearRect(0, 0, w, h);
     e.draw(a, camX + bx, camY + by);
+    if (e.paintOver) e.paintOver(a, camX + bx, camY + by, w, h, themeName);
     if (probe) probe(e, g);
     /* Silhouette for the edges: alpha cubed, so soft auras and glows
        drop out and only the solid body grows an outline and a rim */

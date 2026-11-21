@@ -46,6 +46,9 @@
     this.animTimer = 0;
     this.shootCooldown = 0;
     this.alive = true;
+    /* Animation state (pose, springs, blinks, kick bubbles); drawing only */
+    this.rig = Game.hero ? new Game.hero.Rig(Momoko.DRAW_SCALE) : null;
+    if (this.rig) this.rig.emits = true;
   }
 
   Momoko.SWIM_FORCE = 0.45;
@@ -114,11 +117,29 @@
     /* Animation */
     this.animTimer++;
     if (this.animTimer > 6) { this.animTimer = 0; this.animFrame = (this.animFrame + 1) % 4; }
+    if (this.rig) {
+      this.rig.step(1 / 60, { x: this.x, y: this.y, vx: this.vx, vy: this.vy, facing: this.facing, keys: keys });
+    }
+  };
+
+  /* Reaction poses: 'cast', 'hurt', 'happy', 'cheer' (animation only) */
+  Momoko.prototype.react = function (name) {
+    if (this.rig) this.rig.event(name);
+  };
+  /* Kick and breath bubbles, drawn in world space behind her */
+  Momoko.prototype.drawTrail = function (c, camX, camY) {
+    if (this.rig && this.alive) this.rig.drawBubbles(c, camX, camY);
+  };
+  /* Underwater caustics over her, on the lighting rig's isolated layer */
+  Momoko.prototype.paintOver = function (c, wx, wy, w, h, theme) {
+    if (!this.rig || theme === 'trench' || (Game.FX && Game.FX.caustics === false)) return;
+    Game.hero.caustics(c, wx, wy, w, h, this.rig.t, theme === 'wreck' ? 0.2 : 0.28);
   };
 
   Momoko.prototype.shoot = function () {
     if (this.shootCooldown > 0 || !this.alive) return null;
     this.shootCooldown = Momoko.SHOOT_CD;
+    this.react('cast');
     Game.audio.play('bubble');
     return new Bubble(
       this.x + (this.facing === 1 ? this.w : -8),
@@ -131,6 +152,7 @@
     if (this.invincible > 0 || !this.alive) return false;
     this.health--;
     this.invincible = Momoko.INVINCIBLE_TIME;
+    this.react('hurt');
     Game.audio.play('damage');
     if (this.health <= 0) {
       this.alive = false;
@@ -141,6 +163,7 @@
   Momoko.prototype.heal = function () {
     if (this.health < this.maxHealth) {
       this.health++;
+      this.react('happy');
       Game.audio.play('pickup');
       return true;
     }
@@ -181,9 +204,9 @@
     Game.hero.crab(c, px, py, variant, frame);
   }
 
-  /* Drawn a little larger than her hitbox (feet planted at its base),
-     leaning into her swim and stretching on hard vertical strokes. The
-     hitbox itself is unchanged. */
+  /* Drawn a little larger than her hitbox (feet planted at its base).
+     The swim tilt, squash and stretch and turn all come from her rig in
+     hero.js; the hitbox itself is unchanged. */
   Momoko.DRAW_SCALE = 1.18;
   Momoko.prototype.draw = function (c, camX, camY) {
     if (!this.alive) return;
@@ -192,24 +215,22 @@
     var sx = Math.round(this.x - camX);
     var sy = Math.round(this.y - camY);
     var cust = window.Game.customization || {};
-    var fwd = this.vx * this.facing, vy = this.vy;
-    var lean = Math.max(-0.2, Math.min(0.2, fwd * 0.05 + vy * 0.025));
-    var sq = Math.max(-0.04, Math.min(0.06, (Math.abs(vy) - Math.abs(fwd) * 0.6) * 0.02));
     var k = Momoko.DRAW_SCALE;
 
     c.save();
     c.translate(sx + this.w / 2, sy + 31);
-    c.scale(this.facing * k * (1 - sq * 0.6), k * (1 + sq));
+    c.scale(k, k);
     c.translate(-14, -31);
-    c.translate(14, 21);
-    c.rotate(lean);
-    c.translate(-14, -21);
-    /* Crab pet trails at foot level, inside the flip so it stays behind
-       her as she swims */
+    /* Crab pet trails at foot level, mirrored so it stays behind her */
     if (cust.crab && cust.crab !== 'none') {
+      c.save();
+      c.translate(14, 0);
+      c.scale(this.facing, 1);
+      c.translate(-14, 0);
       drawCrabPet(c, -8 + 4, 32, cust.crab, this.animTimer);
+      c.restore();
     }
-    drawMomokoSprite(c, 0, 0, cust, this.animFrame, { t: Date.now() * 0.001, fwd: fwd, vy: vy });
+    drawMomokoSprite(c, 0, 0, cust, this.animFrame, this.rig ? { rig: this.rig } : { t: Date.now() * 0.001, fwd: 0, vy: 0 });
     c.restore();
   };
 
