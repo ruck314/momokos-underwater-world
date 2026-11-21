@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v2.5.0';
+  Game.VERSION = 'v2.6.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -152,6 +152,9 @@
   /* Each game-over that happens during the boss fight grants +1 max heart on
      subsequent attempts so a struggling player gradually gets more margin. */
   var bossDeathBonus = 0;
+  /* Max hearts gained from heart pickups this level. Kept through a boss
+     retry (the hearts she took stay taken); any other start resets it. */
+  var heartBonus = 0;
 
   /* Dialogue message queued during the playing-state render; drawn in
      canvas-space after the game viewport is painted so it can live in
@@ -207,8 +210,8 @@
     /* Player */
     var sp = level.spawns.player;
     player = new Game.entities.Momoko(sp.x, sp.y);
-    if (bossDeathBonus > 0) {
-      player.maxHealth += bossDeathBonus;
+    if (bossDeathBonus + heartBonus > 0) {
+      player.maxHealth += bossDeathBonus + heartBonus;
       player.health = player.maxHealth;
     }
     respawnPos = { x: sp.x, y: sp.y };
@@ -600,6 +603,7 @@
               );
             } else if (player.heal()) {
               pick.active = false;
+              heartBonus++;
               var hColors = ['#ff4466', '#ff88aa', '#ffccdd'];
               particles = particles.concat(
                 Game.entities.spawnBurst(pick.x + 8, pick.y + 8, 8, hColors)
@@ -2602,7 +2606,7 @@
     var keep = (fromBoss && index === currentLevel && level)
       ? { pickups: pickups, chests: chests, got: pearlsCollected, total: pearlTotal }
       : null;
-    if (!fromBoss) bossDeathBonus = 0;
+    if (!fromBoss) { bossDeathBonus = 0; heartBonus = 0; }
     currentLevel = index;
     loadLevel(index);
     if (keep) {

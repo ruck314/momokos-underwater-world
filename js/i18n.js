@@ -27,6 +27,7 @@
       resume: 'Resume',
       quit: 'Quit',
       hearts: 'Hearts',
+      heartMaxUp: '+1 \u2665 MAX',
       bossHP: 'MONI',
 
       /* ---- Game over / victory ---- */
@@ -226,6 +227,7 @@
       resume: 'つづける',
       quit: 'やめる',
       hearts: 'ハート',
+      heartMaxUp: '+1 \u2665 ふえたよ!',
       bossHP: 'モニ',
 
       /* ---- ゲームオーバー / 勝利 ---- */

@@ -689,55 +689,175 @@
   }
 
   var hudPearls = -1, hudPop = 0, hudHealth = -1, hudHurt = 0;
+  /* Max-heart growth: hudSlots eases toward maxHealth so the plate widens
+     smoothly, hudGrow pops the new slot in, hudGain runs the "+1" label. */
+  var hudMax = -1, hudSlots = 5, hudGrow = 0, hudGain = 0;
+  /* Up to HUD_ROW_MAX hearts sit in one row that compacts to fit
+     HUD_HEARTS_W (room for the pearl counter left of the boss bar); more
+     than that collapse into a heart plus "7/12". */
+  var HUD_ROW_MAX = 8, HUD_HEARTS_W = 188;
+
+  /* One HUD heart centred on (hx, hy): ink rim, then a glossy full heart
+     or an empty socket. */
+  function drawHudHeart(c, hx, hy, full) {
+    c.fillStyle = full ? '#4a0a20' : 'rgba(14, 6, 28, 0.9)';
+    drawHeart(c, hx, hy + 0.6, 12.6);
+    if (full) {
+      var hg = c.createLinearGradient(0, hy - 9, 0, hy + 4);
+      hg.addColorStop(0, '#ff8aa4');
+      hg.addColorStop(0.45, '#ff3a5c');
+      hg.addColorStop(1, '#c0123a');
+      c.fillStyle = hg;
+      drawHeart(c, hx, hy, 10);
+      /* gloss and a pinpoint glint */
+      c.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      c.beginPath();
+      c.ellipse(hx - 4, hy - 5.4, 2.6, 1.6, -0.5, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.arc(hx - 5.2, hy - 6, 0.8, 0, Math.PI * 2);
+      c.fill();
+    } else {
+      /* Empty socket, shadowed inside */
+      var eg = c.createLinearGradient(0, hy - 9, 0, hy + 4);
+      eg.addColorStop(0, '#1e1430');
+      eg.addColorStop(1, '#4a3a62');
+      c.fillStyle = eg;
+      drawHeart(c, hx, hy, 10);
+    }
+  }
+
+  /* Ease-out with overshoot, 0 -> 1 */
+  function backOut(t) {
+    var u = t - 1;
+    return 1 + 2.70158 * u * u * u + 1.70158 * u * u;
+  }
+
   function drawHUD(c, player, pearls, pearlTotal) {
     /* Short pops when a pearl is picked up or a heart is lost */
     if (hudPearls >= 0 && pearls > hudPearls) hudPop = 1;
     hudPearls = pearls;
-    if (hudHealth >= 0 && player.health !== hudHealth) hudHurt = 1;
+    if (hudHealth >= 0 && player.health < hudHealth) hudHurt = 1;
     hudHealth = player.health;
+    /* A new level (max back to 5) snaps; a pickup grows */
+    if (hudMax < 0 || player.maxHealth < hudMax) hudSlots = player.maxHealth;
+    else if (player.maxHealth > hudMax) { hudGrow = 1; hudGain = 1; }
+    hudMax = player.maxHealth;
+    hudSlots += (hudMax - hudSlots) * 0.18;
+    if (Math.abs(hudMax - hudSlots) < 0.01) hudSlots = hudMax;
     hudPop = Math.max(0, hudPop - 0.06);
     hudHurt = Math.max(0, hudHurt - 0.05);
+    hudGrow = Math.max(0, hudGrow - 0.035);
+    hudGain = Math.max(0, hudGain - 0.011);
     var now = Date.now() * 0.001;
+    var hy = 21, i, beat, labelX;
+    var heartsW;
+    /* The last heart beats when she is down to one or two */
+    var lowBeat = player.health <= 2 ? 1 + Math.max(0, Math.sin(now * 7)) * 0.12 : 1;
 
-    /* Hearts on a glass plate so sprites drifting past never swallow them */
-    hudPlate(c, 3, 5, player.maxHealth * 28 + 2, 28);
-    for (var i = 0; i < player.maxHealth; i++) {
-      var hx = 17 + i * 28;
-      var hy = 21;
-      var full = i < player.health;
-      /* The last heart beats when she is down to one or two */
-      var beat = full && i === player.health - 1 && player.health <= 2 ? 1 + Math.max(0, Math.sin(now * 7)) * 0.12 : 1;
-      if (i === player.health && hudHurt > 0) beat = 1 + hudHurt * 0.35;
+    if (hudMax <= HUD_ROW_MAX) {
+      /* Hearts on a glass plate so sprites drifting past never swallow them */
+      var slot = Math.min(28, (HUD_HEARTS_W - 2) / hudSlots);
+      var k = slot / 28;
+      heartsW = hudSlots * slot + 2;
+      hudPlate(c, 3, 5, heartsW, 28);
+      for (i = 0; i < hudMax; i++) {
+        var hx = 3 + slot * (i + 0.5);
+        var full = i < player.health;
+        beat = full && i === player.health - 1 ? lowBeat : 1;
+        if (i === player.health && hudHurt > 0) beat = 1 + hudHurt * 0.35;
+        if (hudGrow > 0) {
+          if (i === hudMax - 1) beat = backOut(1 - hudGrow);
+          else if (i === player.health - 1) beat = 1 + hudGrow * 0.35;
+        }
+        if (i === hudMax - 1 && hudGrow > 0) {
+          /* pink bloom behind the slot that just appeared */
+          var bl = c.createRadialGradient(hx, hy - 1, 1, hx, hy - 1, 20);
+          bl.addColorStop(0, 'rgba(255, 150, 190, ' + (0.7 * hudGrow) + ')');
+          bl.addColorStop(1, 'rgba(255, 150, 190, 0)');
+          c.fillStyle = bl;
+          c.fillRect(hx - 20, hy - 21, 40, 40);
+        }
+        c.save();
+        c.translate(hx, hy - 1);
+        c.scale(beat * k, beat * k);
+        c.translate(-hx, -(hy - 1));
+        drawHudHeart(c, hx, hy, full);
+        c.restore();
+      }
+      labelX = 3 + slot * (hudMax - 0.5);
+    } else {
+      /* Long rows collapse to one heart and "health/max" */
+      var cur = String(player.health), tot = '/' + hudMax;
       c.save();
-      c.translate(hx, hy - 1);
+      c.font = 'bold 17px ' + FONT;
+      var cw = c.measureText(cur).width;
+      c.font = 'bold 13px ' + FONT;
+      var tw2 = c.measureText(tot).width;
+      heartsW = 34 + cw + tw2 + 10;
+      hudPlate(c, 3, 5, heartsW, 28);
+      beat = hudHurt > 0 ? 1 + hudHurt * 0.35 : (hudGrow > 0 ? 1 + Math.sin((1 - hudGrow) * Math.PI) * 0.45 : lowBeat);
+      if (hudGrow > 0) {
+        var bl2 = c.createRadialGradient(20, hy - 1, 1, 20, hy - 1, 20);
+        bl2.addColorStop(0, 'rgba(255, 150, 190, ' + (0.7 * hudGrow) + ')');
+        bl2.addColorStop(1, 'rgba(255, 150, 190, 0)');
+        c.fillStyle = bl2;
+        c.fillRect(0, 0, 40, 40);
+      }
+      c.translate(20, hy - 1);
       c.scale(beat, beat);
-      c.translate(-hx, -(hy - 1));
-      /* Ink rim */
-      c.fillStyle = full ? '#4a0a20' : 'rgba(14, 6, 28, 0.9)';
-      drawHeart(c, hx, hy + 0.6, 12.6);
-      if (full) {
-        var hg = c.createLinearGradient(0, hy - 9, 0, hy + 4);
-        hg.addColorStop(0, '#ff8aa4');
-        hg.addColorStop(0.45, '#ff3a5c');
-        hg.addColorStop(1, '#c0123a');
-        c.fillStyle = hg;
-        drawHeart(c, hx, hy, 10);
-        /* gloss and a pinpoint glint */
-        c.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        c.beginPath();
-        c.ellipse(hx - 4, hy - 5.4, 2.6, 1.6, -0.5, 0, Math.PI * 2);
-        c.fill();
-        c.fillStyle = '#ffffff';
-        c.beginPath();
-        c.arc(hx - 5.2, hy - 6, 0.8, 0, Math.PI * 2);
-        c.fill();
-      } else {
-        /* Empty socket, shadowed inside */
-        var eg = c.createLinearGradient(0, hy - 9, 0, hy + 4);
-        eg.addColorStop(0, '#1e1430');
-        eg.addColorStop(1, '#4a3a62');
-        c.fillStyle = eg;
-        drawHeart(c, hx, hy, 10);
+      c.translate(-20, -(hy - 1));
+      drawHudHeart(c, 20, hy, player.health > 0);
+      c.restore();
+      c.save();
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.lineJoin = 'round';
+      c.lineWidth = 3;
+      c.strokeStyle = 'rgba(30, 6, 18, 0.85)';
+      c.font = 'bold 17px ' + FONT;
+      c.strokeText(cur, 37, 20);
+      c.fillStyle = hudGrow > 0 ? '#ffd0de' : '#ffffff';
+      c.fillText(cur, 37, 20);
+      c.font = 'bold 13px ' + FONT;
+      c.strokeText(tot, 37 + cw + 1, 21);
+      c.fillStyle = hudGrow > 0 ? '#ffd0de' : '#ffc2d2';
+      c.fillText(tot, 37 + cw + 1, 21);
+      c.restore();
+      labelX = 3 + heartsW / 2;
+    }
+
+    /* "+1 ♥ MAX" floats up under the hearts after a pickup */
+    if (hudGain > 0) {
+      var parts = Game.i18n.t('heartMaxUp').split('\u2665');
+      c.save();
+      c.font = 'bold 14px ' + FONT;
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.lineJoin = 'round';
+      c.lineWidth = 3;
+      var widths = [], lw = 0;
+      for (i = 0; i < parts.length; i++) {
+        widths.push(c.measureText(parts[i]).width);
+        lw += widths[i] + (i > 0 ? 18 : 0);
+      }
+      var lx = Math.max(6, labelX - lw / 2);
+      var ly = 46 + hudGain * 12;
+      c.globalAlpha = hudGain > 0.25 ? Math.min(1, (1 - hudGain) * 8) : hudGain / 0.25;
+      for (i = 0; i < parts.length; i++) {
+        if (i > 0) {
+          c.fillStyle = '#4a0a20';
+          drawHeart(c, lx + 9, ly + 2.6, 10);
+          c.fillStyle = '#ff4a6c';
+          drawHeart(c, lx + 9, ly + 2.2, 8);
+          lx += 18;
+        }
+        c.strokeStyle = 'rgba(30, 6, 18, 0.85)';
+        c.strokeText(parts[i], lx, ly);
+        c.fillStyle = '#ffe0ea';
+        c.fillText(parts[i], lx, ly);
+        lx += widths[i];
       }
       c.restore();
     }
@@ -748,7 +868,7 @@
       c.save();
       c.font = 'bold 15px ' + FONT;
       var tw = c.measureText(text).width;
-      var px = 3 + player.maxHealth * 28 + 2 + 8;
+      var px = 3 + heartsW + 8;
       var pw = tw + 36;
       hudPlate(c, px, 5, pw, 28);
       /* soft glow behind the pearl, flaring on a pickup */

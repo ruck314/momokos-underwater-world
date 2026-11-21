@@ -160,14 +160,14 @@
     return true;
   };
 
+  /* A heart pickup raises max hearts by one and adds a full heart, so it
+     is a reward even at full health. */
   Momoko.prototype.heal = function () {
-    if (this.health < this.maxHealth) {
-      this.health++;
-      this.react('happy');
-      Game.audio.play('pickup');
-      return true;
-    }
-    return false;
+    this.maxHealth++;
+    this.health++;
+    this.react('happy');
+    Game.audio.play('pickup');
+    return true;
   };
 
   Momoko.prototype.respawn = function (x, y) {
