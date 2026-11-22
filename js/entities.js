@@ -161,7 +161,24 @@
     if (this.rig) {
       this.rig.step(1 / 60, { x: this.x, y: this.y, vx: this.vx, vy: this.vy, facing: this.facing, keys: keys, turbo: this.boost - 1 });
     }
+    this.petSwing = petSwingStep(this.petSwing, this.facing, 1 / 60);
   };
+
+  /* Pet swing: instead of mirroring flat when she turns, the pet swings
+     round behind her on a shallow ellipse. th runs 0 (behind her left,
+     she faces right) to PI (behind her right); sin(th) is its depth.
+     The same timing and depth constants are used in every Momoko game. */
+  var PET_SWING_T = 0.3, PET_SWING_SHRINK = 0.18, PET_SWING_LIFT = 3, PET_SWING_NARROW = 0.5;
+  function petSwingStep(S, facing, dt) {
+    var to = facing > 0 ? 0 : Math.PI;
+    if (!S) return { th: to, from: to, to: to, u: 1 };
+    if (S.to !== to) { S.from = S.th; S.to = to; S.u = 0; }
+    if (S.u < 1) {
+      S.u = Math.min(1, S.u + dt / PET_SWING_T);
+      S.th = S.from + (S.to - S.from) * S.u * S.u * (3 - 2 * S.u);
+    }
+    return S;
+  }
 
   /* Reaction poses: 'cast', 'hurt', 'happy', 'cheer' (animation only) */
   Momoko.prototype.react = function (name) {
@@ -267,14 +284,18 @@
     c.translate(sx + this.w / 2, sy + 31);
     c.scale(k, k);
     c.translate(-14, -31);
-    /* Crab pet trails at foot level, mirrored so it stays behind her */
+    /* Crab pet trails at foot level behind her. When she turns it swings
+       round behind her (see petSwingStep): it shrinks and rises as it
+       goes deeper, narrows toward a front view and swaps its facing at
+       the far point, where she hides it. */
     if (cust.crab && cust.crab !== 'none') {
+      var ps = this.petSwing || { th: this.facing > 0 ? 0 : Math.PI };
+      var pco = Math.cos(ps.th), pz = Math.sin(ps.th), pd = 1 - PET_SWING_SHRINK * pz;
       c.save();
-      c.translate(14, 0);
-      c.scale(this.facing, 1);
-      c.translate(-14, 0);
+      c.translate(14 - 10 * pco, 36.5 - PET_SWING_LIFT * pz);
+      c.scale((pco < 0 ? -1 : 1) * (PET_SWING_NARROW + (1 - PET_SWING_NARROW) * Math.abs(pco)) * pd, pd);
       /* animTimer wraps every 7 frames; the rig clock keeps the claws smooth */
-      drawCrabPet(c, -8 + 4, 32, cust.crab, this.rig ? this.rig.t * 60 : this.animTimer);
+      drawCrabPet(c, 0, -4.5, cust.crab, this.rig ? this.rig.t * 60 : this.animTimer);
       c.restore();
     }
     drawMomokoSprite(c, 0, 0, cust, this.animFrame, this.rig ? { rig: this.rig } : { t: Date.now() * 0.001, fwd: 0, vy: 0 });

@@ -1938,9 +1938,11 @@
     c.beginPath(); c.arc(stageCX + 66, pedY - 1, 3.5, Math.PI, 0); c.fill();
     drawStarfish(c, stageCX + 46, pedY + 6, 6, t * 0.004, '#ff8a5c');
 
-    /* Momoko preview, bobbing gently above the pedestal */
+    /* Momoko preview, bobbing gently above the pedestal while she is
+       busy, nearly still once she settles (see stepPreviewRig) */
+    stepPreviewRig();
     c.save();
-    c.translate(stageCX - 70, stageCY - 88 + Math.sin(t * 0.04) * 3);
+    c.translate(stageCX - 70, stageCY - 88 + Math.sin(t * 0.04) * 3 * (1 - PREVIEW_DAMP * pace.calm));
     c.scale(5, 5);
     drawMomokoPreview(c, Game.customization, t);
     c.restore();
@@ -1995,11 +1997,66 @@
 
   function drawMomokoPreview(c, cust, t) {
     if (!Game.entities) return;
-    if (Game.entities.drawMomokoSprite) Game.entities.drawMomokoSprite(c, 0, 0, cust, 0);
+    if (Game.entities.drawMomokoSprite) Game.entities.drawMomokoSprite(c, 0, 0, cust, 0, previewRig ? { rig: previewRig } : undefined);
     /* Sea friend appears next to her feet in the preview so the player
-       can see the companion they just picked. */
+       can see the companion they just picked. It runs on her paced
+       clock, so it calms down with her. */
     if (Game.entities.drawCrabPet && cust.crab && cust.crab !== 'none') {
-      Game.entities.drawCrabPet(c, -8, 32, cust.crab, t);
+      Game.entities.drawCrabPet(c, -8, 32, cust.crab, previewRig ? previewPetClock : t);
+    }
+  }
+
+  /* Preview pacing, shared by every Momoko game: a pick sets off a cute
+     reaction for PREVIEW_REACT s, then she settles nearly still so the
+     outfit is easy to see, with one short moment (PREVIEW_MOMENT s) every
+     PREVIEW_GAP_MIN..PREVIEW_GAP_MAX s. `calm` eases toward 1 while
+     settled and 0 during a reaction or moment (time constant PREVIEW_EASE)
+     and damps her idle motion by up to PREVIEW_DAMP. Here that is done by
+     slowing the clock her idle float, tread and hair run on (and the
+     pet's), so blinks and glances keep their own pace. */
+  var PREVIEW_REACT = 2, PREVIEW_MOMENT = 1.2, PREVIEW_GAP_MIN = 6, PREVIEW_GAP_MAX = 12;
+  var PREVIEW_EASE = 0.3, PREVIEW_DAMP = 0.85;
+  var pace = { act: '', age: 0, len: 0, gap: 0, calm: 1, cue: -1 };
+  var previewRig = null, previewLast = 0, previewClock = 0, previewPetClock = 0;
+  var PREVIEW_IDLE = { x: 0, y: 0, vx: 0, vy: 0, facing: 1, keys: {} };
+  function pickOf(list) { return list[Math.floor(Math.random() * list.length)]; }
+  function previewAct(kind, len) {
+    pace.act = kind; pace.age = 0; pace.len = len; pace.cue = -1;
+    var r = previewRig;
+    if (kind === 'cheer') { r.event('cheer'); r.reactT = r.reactDur = 1.8; }
+    else if (kind === 'twirl' || kind === 'hops') { r.event('happy'); pace.cue = 0.95; }
+    else if (kind === 'hop') r.event('happy');
+    else if (kind === 'cast') r.event('cast');
+    else if (kind === 'look') { r.lookTx = 0.6; r.lookTy = -0.45; r.glanceIn = 1.1; }
+  }
+  function previewPick() { if (previewRig) previewAct(pickOf(['cheer', 'twirl', 'hops']), PREVIEW_REACT); }
+  function stepPreviewRig() {
+    var H = Game.hero;
+    if (!H || !H.Rig) return;
+    var now = performance.now();
+    var fresh = !previewRig || now - previewLast > 500;
+    if (!previewRig) previewRig = new H.Rig(1);
+    var dt = fresh ? 1 / 60 : Math.min(0.05, (now - previewLast) / 1000);
+    previewLast = now;
+    if (fresh) previewPick();                              /* she says hello */
+    var r = previewRig, a = pace.act, u = pace.age;
+    PREVIEW_IDLE.facing = (a === 'twirl' || a === 'turn') && u < (a === 'twirl' ? 0.5 : 0.6) ? -1 : 1;
+    if (pace.cue >= 0 && u >= pace.cue) { pace.cue = -1; r.event('happy'); }
+    var rate = 1 - PREVIEW_DAMP * pace.calm;
+    /* in steps no longer than the simulation's (stiff glance springs) */
+    for (var n = Math.ceil(dt * 60), i = 0; i < n; i++) {
+      r.t = previewClock;
+      r.step(dt / n, PREVIEW_IDLE);
+      previewClock += dt / n * rate;
+    }
+    r.t = previewClock;
+    previewPetClock += dt * 60 * rate;
+    pace.calm += ((a ? 0 : 1) - pace.calm) * (1 - Math.exp(-dt / PREVIEW_EASE));
+    if (a) {
+      pace.age += dt;
+      if (pace.age >= pace.len) { pace.act = ''; pace.gap = PREVIEW_GAP_MIN + Math.random() * (PREVIEW_GAP_MAX - PREVIEW_GAP_MIN); }
+    } else if ((pace.gap -= dt) <= 0) {
+      previewAct(pickOf(['hop', 'turn', 'cast', 'look']), PREVIEW_MOMENT);
     }
   }
 
@@ -2047,6 +2104,7 @@
       var r = tileRect(vi - page * PER_PAGE);
       if (hitButton(mx, my, r.x, r.y, GRID_TILE_W, GRID_TILE_H)) {
         Game.customization[activeTab.field] = activeTab.variants[vi].id;
+        previewPick();
         Game.audio.play('select');
         return null;
       }
@@ -2059,6 +2117,7 @@
         var p = chipPos(activeTab, ci, blocks[b].skin);
         if (hitButton(mx, my, p.x - CHIP_STEP_X / 2, p.y - CHIP_STEP_Y / 2, CHIP_STEP_X, CHIP_STEP_Y)) {
           Game.customization[blocks[b].field] = blocks[b].colors[ci];
+          previewPick();
           Game.audio.play('select');
           return null;
         }
