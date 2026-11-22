@@ -1364,105 +1364,81 @@
   }
 
   /* ---- Customization Screen ----
-     Layout matches the sketch the user's daughter drew:
-       - Title at top
-       - Momoko preview on the left side (live, updates on every change)
-       - Tab bar along the top-right (hair / dress / swim / shoes /
-         accessories / crab / food)
-       - 3x2 variant icon grid below the tabs
-       - Color swatches below the grid when the current tab has a color
+     Layout follows the sketch the user's daughter drew:
+       - Title and a live Momoko preview on the left
+       - A row of picture tabs along the top of the panel on the right
+       - The active tab's name, and a pager when it has more than ten options
+       - A 5 x 2 grid of picture tiles
+       - Colour chips for the tab, and skin tones
        - Start button at the bottom */
-  var hairColors = ['#e06088', '#4a3728', '#f5d060', '#4488ff', '#222222', '#cc3333', '#3fc8b8', '#b48cf0', '#e4e6f2'];
-  var suitColors = ['#e06088', '#3366aa', '#cc3333', '#7733aa', '#228844', '#dd7722', '#2ab3b0', '#ff8fb8'];
-  var shoeColors = ['#ff99cc', '#33bb77', '#ffcc44', '#66aaff', '#ffffff', '#552211', '#b48cf0', '#ff6a5a'];
-  var skinTones  = ['#ffe0c0', '#ddb896', '#c68c5a', '#8d6e4c', '#5c3d2e'];
+  var hairColors = ['#e06088', '#4a3728', '#f5d060', '#4488ff', '#222222', '#cc3333',
+    '#3fc8b8', '#b48cf0', '#e4e6f2', '#ff9a3c', '#ffb7d6', '#2a3f9a'];
+  var suitColors = ['#e06088', '#3366aa', '#cc3333', '#7733aa', '#228844', '#dd7722',
+    '#2ab3b0', '#ff8fb8', '#f2c230', '#7fc8ff', '#f4f1fa', '#3a3550'];
+  var shoeColors = ['#ff99cc', '#33bb77', '#ffcc44', '#66aaff', '#ffffff', '#552211',
+    '#b48cf0', '#ff6a5a', '#e0407a', '#2ab3b0', '#2f3a66', '#ff9a3c'];
+  var trimColors = ['#ff4f8b', '#ff6a5a', '#ff9a3c', '#ffd23f', '#5fcf6a', '#2ab3b0',
+    '#4aa8ff', '#4a5fd0', '#9a6af0', '#ff9fd0', '#f4f1fa', '#3a3550'];
+  var skinTones  = ['#ffe0c0', '#f0c8a0', '#ddb896', '#c68c5a', '#8d6e4c', '#5c3d2e'];
 
-  /* Tab definitions – order matches the sketch, with accessories added
-     at the end. `field` is the key inside Game.customization this tab
-     writes to. `colorField` (optional) enables a color-swatch row below
-     the grid. Tile icons are rendered previews from hero.js (see
-     optionIcon). At most 9 variants per tab so the 3x3 grid never pages. */
+  /* Tab definitions. `field` is the key inside Game.customization the
+     tab writes to. `colorField` (optional) puts a block of colour chips
+     under the grid, drawn as `chip`. `icon` is the option the tab's own
+     picture shows while nothing of its own is chosen. Tile pictures are
+     rendered by hero.js (see optionFace). */
+  function variantList(prefix, ids) {
+    var out = [];
+    for (var i = 0; i < ids.length; i++) {
+      out.push({ id: ids[i], label: ids[i] === 'none' ? 'varNone' : prefix + ids[i].charAt(0).toUpperCase() + ids[i].slice(1) });
+    }
+    return out;
+  }
   var customTabs = [
-    { id: 'hair',  label: 'tabHair',  field: 'hairStyle', colorField: 'hair',    colors: hairColors,
-      variants: [
-        { id: 'twinTails',  label: 'varTwinTails' },
-        { id: 'longBraids', label: 'varLongBraids' },
-        { id: 'buns',       label: 'varBuns' },
-        { id: 'ponytail',   label: 'varPonytail' },
-        { id: 'longWavy',   label: 'varLongWavy' },
-        { id: 'bob',        label: 'varBob' },
-      ] },
-    { id: 'dress', label: 'tabDress', field: 'outfit',    colorField: 'suit',    colors: suitColors,
-      variants: [
-        { id: 'frillyDress', label: 'varFrillyDress' },
-        { id: 'sailorDress', label: 'varSailorDress' },
-        { id: 'starDress',   label: 'varStarDress' },
-        { id: 'tutuDress',   label: 'varTutuDress' },
-        { id: 'shellDress',  label: 'varShellDress' },
-      ] },
-    { id: 'swim',  label: 'tabSwim',  field: 'outfit',    colorField: 'suit',    colors: suitColors,
-      variants: [
-        { id: 'sailorSwimsuit', label: 'varSailorSwimsuit' },
-        { id: 'onePiece',       label: 'varOnePiece' },
-        { id: 'frillyBikini',   label: 'varFrillyBikini' },
-        { id: 'wetsuit',        label: 'varWetsuit' },
-        { id: 'rashGuard',      label: 'varRashGuard' },
-      ] },
-    { id: 'shoes', label: 'tabShoes', field: 'shoes',     colorField: 'flipper', colors: shoeColors,
-      variants: [
-        { id: 'maryJane', label: 'varMaryJane' },
-        { id: 'sneaker',  label: 'varSneaker' },
-        { id: 'flipper',  label: 'varFlipper' },
-        { id: 'monofin',  label: 'varMonofin' },
-        { id: 'sandals',  label: 'varSandals' },
-      ] },
-    { id: 'acc',   label: 'tabAcc',   field: 'acc',       colorField: null, colors: null,
-      variants: [
-        { id: 'tiara',         label: 'varTiara' },
-        { id: 'flowerCrown',   label: 'varFlowerCrown' },
-        { id: 'bigBow',        label: 'varBigBow' },
-        { id: 'starClips',     label: 'varStarClips' },
-        { id: 'kittyEars',     label: 'varKittyEars' },
-        { id: 'goggles',       label: 'varGoggles' },
-        { id: 'shellNecklace', label: 'varShellNecklace' },
-        { id: 'pearlNecklace', label: 'varPearlNecklace' },
-        { id: 'none',          label: 'varNone' },
-      ] },
+    { id: 'hair',  label: 'tabHair',  field: 'hairStyle', colorField: 'hair',    colors: hairColors, colorLabel: 'hairColor', chip: 'hair',
+      icon: 'twinTails',
+      variants: variantList('var', ['twinTails', 'longBraids', 'buns', 'ponytail', 'longWavy', 'bob', 'sideTail', 'himeCut', 'ringlets', 'pixie']) },
+    { id: 'dress', label: 'tabDress', field: 'outfit',    colorField: 'suit',    colors: suitColors, colorLabel: 'suitColor', chip: 'cloth',
+      icon: 'frillyDress',
+      variants: variantList('var', ['frillyDress', 'sailorDress', 'starDress', 'tutuDress', 'shellDress', 'yukata', 'ballGown', 'jellyDress', 'hulaDress']) },
+    { id: 'swim',  label: 'tabSwim',  field: 'outfit',    colorField: 'suit',    colors: suitColors, colorLabel: 'suitColor', chip: 'cloth',
+      icon: 'sailorSwimsuit',
+      variants: variantList('var', ['sailorSwimsuit', 'onePiece', 'frillyBikini', 'wetsuit', 'rashGuard', 'stripeSuit', 'skirtSuit', 'mermaidSuit', 'sharkSuit']) },
+    { id: 'shoes', label: 'tabShoes', field: 'shoes',     colorField: 'flipper', colors: shoeColors, colorLabel: 'shoeColor', chip: 'cloth',
+      icon: 'maryJane',
+      variants: variantList('var', ['maryJane', 'sneaker', 'flipper', 'monofin', 'sandals', 'rainBoots', 'ballet', 'geta', 'anklet']) },
+    { id: 'acc',   label: 'tabAcc',   field: 'acc',       colorField: 'trim',    colors: trimColors, colorLabel: 'trimColor', chip: 'gem',
+      icon: 'tiara',
+      variants: variantList('var', ['none', 'tiara', 'flowerCrown', 'bigBow', 'starClips', 'kittyEars', 'goggles', 'strawHat', 'sailorCap', 'starfish',
+        'coralCrown', 'snorkel', 'shellNecklace', 'pearlNecklace']) },
+    { id: 'back',  label: 'tabBack',  field: 'back',      colorField: 'trim',    colors: trimColors, colorLabel: 'trimColor', chip: 'gem',
+      icon: 'finWings',
+      variants: variantList('var', ['none', 'finWings', 'cape', 'swimRing', 'scubaTank', 'balloon']) },
+    { id: 'wand',  label: 'tabWand',  field: 'wand',      colorField: 'trim',    colors: trimColors, colorLabel: 'trimColor', chip: 'gem',
+      icon: 'star',
+      variants: variantList('varWand', ['star', 'heart', 'shell', 'trident', 'flower', 'moon', 'bubble']) },
     { id: 'crab',  label: 'tabCrab',  field: 'crab',      colorField: null, colors: null,
-      variants: [
-        { id: 'none',   label: 'varNone' },
-        { id: 'red',    label: 'varCrabRed' },
-        { id: 'blue',   label: 'varCrabBlue' },
-        { id: 'gold',   label: 'varCrabGold' },
-        { id: 'pink',   label: 'varCrabPink' },
-        { id: 'hermit', label: 'varCrabHermit' },
-      ] },
+      icon: 'red',
+      variants: variantList('varCrab', ['none', 'red', 'blue', 'gold', 'pink', 'hermit', 'turtle', 'octopus', 'puffer', 'seahorse']) },
     { id: 'food',  label: 'tabFood',  field: 'food',      colorField: null, colors: null,
-      variants: [
-        { id: 'none',       label: 'varNone' },
-        { id: 'iceCream',   label: 'varIceCream' },
-        { id: 'onigiri',    label: 'varOnigiri' },
-        { id: 'donut',      label: 'varDonut' },
-        { id: 'crepe',      label: 'varCrepe' },
-        { id: 'taiyaki',    label: 'varTaiyaki' },
-        { id: 'parfait',    label: 'varParfait' },
-        { id: 'macaron',    label: 'varMacaron' },
-        { id: 'strawberry', label: 'varStrawberry' },
-      ] },
+      icon: 'iceCream',
+      variants: variantList('var', ['none', 'iceCream', 'onigiri', 'donut', 'crepe', 'taiyaki', 'parfait', 'macaron', 'strawberry', 'watermelon',
+        'shavedIce', 'popsicle', 'dango', 'bubbleTea']) },
   ];
 
-  var customSelection = { tab: 'hair' };
+  var customSelection = { tab: 'hair', page: 0 };
 
   /* ---- Layout constants (shared by draw + hit-test) ----
-     Grid is sized for up to 3 rows × 3 cols so the 9-variant tabs fit
-     without paging. Colors + skin sit below at fixed Y so the layout
-     stays stable when switching tabs. */
-  var TAB_X = 304, TAB_Y = 62, TAB_W = 64, TAB_H = 34, TAB_GAP = 4;
-  var GRID_X = 304, GRID_Y = 106, GRID_COLS = 3, GRID_TILE_W = 154, GRID_TILE_H = 58, GRID_GAP = 7;
-  var COLOR_X = 304, COLOR_STEP = 42;
-  /* Panel card framing the tabs, grid and swatches; Start sits centred
-     under it. */
-  var PANEL_X = 292, PANEL_Y = 52, PANEL_W = 500, PANEL_H = 358;
+     Everything stays inside the 800 x 480 game window. The grid holds
+     ten tiles a page; the colour chips sit at a fixed height under it
+     so the layout doesn't jump between tabs. */
+  var PANEL_X = 292, PANEL_Y = 8, PANEL_W = 500, PANEL_H = 406;
+  var TAB_X = 304, TAB_Y = 16, TAB_W = 50, TAB_H = 46, TAB_STEP = 53.25;
+  var HEAD_Y = 66, HEAD_H = 34;
+  var PAGER_W = 54, PAGER_PREV_X = 620, PAGER_NEXT_X = 726;
+  var GRID_X = 304, GRID_Y = 104, GRID_COLS = 5, GRID_ROWS = 2, GRID_TILE_W = 89.6, GRID_TILE_H = 104, GRID_GAP = 7;
+  var PER_PAGE = GRID_COLS * GRID_ROWS;
+  var CHIP_X = 304, CHIP_Y = 348, CHIP_STEP_X = 40, CHIP_STEP_Y = 34, CHIP_COLS = 6, CHIP_LABEL_Y = 332;
+  var SKIN_X = 566;
   var START_BTN_W = 200, START_BTN_H = 46;
   var START_BTN_X = PANEL_X + PANEL_W / 2 - START_BTN_W / 2;
   var START_BTN_Y = 420;
@@ -1472,78 +1448,171 @@
     for (var i = 0; i < customTabs.length; i++) if (customTabs[i].id === id) return customTabs[i];
     return customTabs[0];
   }
-
-  /* Where the color-swatch row anchors for this tab. Sits just below the
-     active grid so tabs with fewer variants (e.g. hair) don't leave a
-     gap. Used by both the draw pass and the hit-test. */
-  function colorYFor(tab) {
-    var rows = Math.max(1, Math.ceil(tab.variants.length / GRID_COLS));
-    return GRID_Y + rows * (GRID_TILE_H + GRID_GAP) + 26;
+  function pageCount(tab) { return Math.ceil(tab.variants.length / PER_PAGE); }
+  /* The page that holds the tab's current choice */
+  function pageOfChoice(tab) {
+    var cur = Game.customization[tab.field];
+    for (var i = 0; i < tab.variants.length; i++) if (tab.variants[i].id === cur) return Math.floor(i / PER_PAGE);
+    return 0;
   }
-  /* Skin row centre: under the colour row, or in its place when the tab
-     has no colours (keeps the 3-row tabs inside the panel) */
-  function skinYFor(tab) {
-    return colorYFor(tab) + (tab.colorField ? 68 : 16);
-  }
-
-  /* ---- Option tile icons ----
-     Each tile shows the option on Momoko herself, rendered by hero.js
-     in a still pose and cropped to the part that changes (her head for
-     hair and accessories, chin to toes for outfits, her feet for
-     shoes; crops are square so the fit is exact), or the crab / food painters on their own. Baked once per
-     option and look into a small canvas at 3x, re-baked when a colour
-     or another choice changes. */
-  var ICON = 54, ICON_RES = 3;
-  var iconCache = {}, iconCount = 0;
-  var ICON_CROP = {
-    hair:  [-1.5, -4.5, 31, 31, true],
-    dress: [3, 18.5, 22, 22, true],
-    swim:  [3, 18.5, 22, 22, true],
-    shoes: [4, 25.5, 20, 20, true],
-    acc:   [-0.5, -6, 29, 31, true],
-  };
-  function optionIcon(tab, variantId) {
-    var cu = Game.customization;
-    var look = {
-      hair: cu.hair, suit: cu.suit, skin: cu.skin, flipper: cu.flipper, hairStyle: cu.hairStyle,
-      outfit: cu.outfit, shoes: cu.shoes, acc: cu.acc, food: 'none', crab: 'none',
+  function tileRect(i) {
+    return {
+      x: GRID_X + (i % GRID_COLS) * (GRID_TILE_W + GRID_GAP),
+      y: GRID_Y + Math.floor(i / GRID_COLS) * (GRID_TILE_H + GRID_GAP),
     };
-    if (tab.field !== 'crab' && tab.field !== 'food') look[tab.field] = variantId;
-    var key = tab.id + '|' + variantId + '|' + (tab.field === 'crab' || tab.field === 'food' ? '' : JSON.stringify(look));
-    if (iconCache[key]) return iconCache[key];
-    if (iconCount > 90) { iconCache = {}; iconCount = 0; }
-    var cv = document.createElement('canvas');
-    cv.width = cv.height = ICON * ICON_RES;
-    var ic = cv.getContext('2d');
-    ic.scale(ICON_RES, ICON_RES);
-    var H = Game.hero;
-    if (tab.field === 'crab' || tab.field === 'food') {
-      if (variantId === 'none') {
-        ic.strokeStyle = 'rgba(190, 225, 255, 0.55)';
-        ic.lineWidth = 3;
+  }
+  /* Chip centre: the tab's colours fill a 6 x 2 block on the left, skin
+     tones a 3 x 2 block on the right (or the left block, in one row,
+     when the tab has no colours of its own) */
+  function chipPos(tab, i, skin) {
+    if (skin && !tab.colorField) return { x: CHIP_X + 16 + i * CHIP_STEP_X, y: CHIP_Y + 2 };
+    var cols = skin ? 3 : CHIP_COLS;
+    return { x: (skin ? SKIN_X : CHIP_X) + 16 + (i % cols) * CHIP_STEP_X, y: CHIP_Y + 2 + Math.floor(i / cols) * CHIP_STEP_Y };
+  }
+
+  /* ---- Option tile faces ----
+     Each tile shows what the option changes, rendered by hero.js with
+     the player's current look: hair on the whole figure, outfits from
+     the chin down, shoes on her planted feet, head accessories close
+     up; back items, wands, sea friends and snacks are painted on their
+     own, big. The whole face of a tile (card, lit well, picture, label
+     band) is baked once per option, look and language into a small
+     canvas at 2x and re-baked when a colour or another choice changes,
+     so a frame only blits it. A bake costs about one hero draw, so at
+     most a few are done per frame; a tile waiting for its turn keeps
+     its previous face. */
+  var FACE_W = 90, FACE_H = 104, ICON_W = 86, ICON_RES = 2, ICON_VIS = 79;
+  var iconCache = {}, iconCount = 0, iconLast = {}, iconBudget = 0;
+  /* [centre x, top y, scale] of the sprite region framed for a tab */
+  var ICON_FRAME = {
+    hair:  [14, -5.5, 2.45],
+    dress: [14, 15, 3.9],
+    swim:  [14, 15, 3.9],
+    shoes: [14, 27.2, 6.6],
+    acc:   [14, -9.4, 3],
+  };
+  /* [centre x, centre y, scale] of each back item on its own */
+  var BACK_FRAME = {
+    finWings: [14, 20.5, 2.1], cape: [14, 27.4, 3], swimRing: [14, 26.4, 3.3], scubaTank: [10.6, 22.6, 4.3], balloon: [-5, -4.2, 5.2],
+  };
+  var PET_FRAME = { seahorse: [1, 2.2, 4.7], hermit: [0.4, 0.6, 5], turtle: [-0.6, 0, 5], puffer: [0.5, -0.4, 5.4] };
+  function paintIcon(ic, tab, variantId, look) {
+    var H = Game.hero, cx = ICON_W / 2, cy = ICON_VIS / 2 + 2;
+    if (variantId === 'none') {
+      /* a slashed ring: nothing worn */
+      ic.lineCap = 'round';
+      for (var p = 0; p < 2; p++) {
+        ic.strokeStyle = p ? 'rgba(206, 234, 255, 0.85)' : 'rgba(4, 20, 50, 0.5)';
+        ic.lineWidth = p ? 4 : 7;
         ic.beginPath();
-        ic.arc(ICON / 2, ICON / 2, 13, 0, Math.PI * 2);
-        ic.moveTo(ICON / 2 - 9, ICON / 2 + 9);
-        ic.lineTo(ICON / 2 + 9, ICON / 2 - 9);
+        ic.arc(cx, cy, 19, 0, Math.PI * 2);
+        ic.moveTo(cx - 13.4, cy + 13.4);
+        ic.lineTo(cx + 13.4, cy - 13.4);
         ic.stroke();
-      } else if (tab.field === 'crab') {
-        ic.save();
-        ic.translate(ICON / 2, ICON / 2 + 4);
-        ic.scale(3.3, 3.3);
-        H.crab(ic, 0, 0, variantId, 0);
-        ic.restore();
-      } else {
-        H.food(ic, variantId, ICON / 2, ICON / 2, 5.4);
       }
+    } else if (tab.field === 'crab') {
+      var pf = PET_FRAME[variantId] || [0, 0.2, 5.2];
+      ic.translate(cx, cy + 6);
+      ic.scale(pf[2], pf[2]);
+      H.crab(ic, -pf[0], pf[1], variantId, 0);
+    } else if (tab.field === 'food') {
+      H.food(ic, variantId, cx, cy + 4, 8.2);
+    } else if (tab.field === 'wand') {
+      ic.translate(cx, cy);
+      ic.rotate(-0.62);
+      ic.scale(6, 6);
+      ic.translate(-7.6, 0);
+      H.part(ic, look, 'wand');
+    } else if (tab.field === 'back') {
+      var bf = BACK_FRAME[variantId];
+      ic.translate(cx, cy);
+      ic.scale(bf[2], bf[2]);
+      ic.translate(-bf[0], -bf[1]);
+      H.part(ic, look, 'back');
     } else {
-      var r = ICON_CROP[tab.id];
-      /* necklaces: frame her chin and chest instead of her crown */
-      if (/Necklace$/.test(variantId)) r = [2, 7.5, 24, 24, true];
-      H.portrait(ic, look, r[0], r[1], r[2], r[3], 1, 1, ICON - 2, ICON - 2, r[4]);
+      var f = ICON_FRAME[tab.id];
+      /* necklaces: frame her chin and chest; the monofin needs room */
+      if (/Necklace$/.test(variantId)) f = [14, 12.6, 5];
+      else if (variantId === 'monofin') f = [14, 25, 4.2];
+      ic.translate(cx, 0);
+      ic.scale(f[2], f[2]);
+      ic.translate(-f[0], -f[1]);
+      H.draw(ic, 0, 0, look, 0, { still: true, noWand: tab.id !== 'acc' || /Necklace$/.test(variantId), stand: tab.id === 'shoes' });
     }
-    iconCache[key] = cv;
+  }
+  function optionFace(tab, variant) {
+    var cu = Game.customization, variantId = variant.id, own = tab.field === 'crab' || tab.field === 'food';
+    var label = Game.i18n.t(variant.label), slot = tab.id + '|' + variantId;
+    var look = null, key = slot + '|' + label;
+    if (!own && variantId !== 'none') {
+      look = {
+        hair: cu.hair, suit: cu.suit, skin: cu.skin, flipper: cu.flipper, trim: cu.trim, hairStyle: cu.hairStyle,
+        outfit: cu.outfit, shoes: cu.shoes, acc: cu.acc, back: 'none', wand: cu.wand, food: 'none', crab: 'none',
+      };
+      look[tab.field] = variantId;
+      /* a floor-length gown would hide the shoes being chosen */
+      if (tab.id === 'shoes' && look.outfit === 'ballGown') look.outfit = 'frillyDress';
+      key += '|' + (tab.field === 'wand' || tab.field === 'back' ? cu.trim : JSON.stringify(look));
+    }
+    if (iconCache[key]) return iconCache[key];
+    if (iconBudget <= 0 && iconLast[slot]) return iconLast[slot];
+    iconBudget--;
+    if (iconCount > 160) { iconCache = {}; iconCount = 0; }
+    var cv = document.createElement('canvas');
+    cv.width = FACE_W * ICON_RES;
+    cv.height = FACE_H * ICON_RES;
+    var ic = cv.getContext('2d'), w = FACE_W, h = FACE_H;
+    ic.scale(ICON_RES, ICON_RES);
+    var g = ic.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#2c6da6');
+    g.addColorStop(1, '#123562');
+    roundRect(ic, 0, 0, w, h, 10);
+    ic.fillStyle = g;
+    ic.fill();
+    ic.save();
+    roundRect(ic, 2, 2, w - 4, h - 4, 8);
+    ic.clip();
+    /* light falling into the well, a soft shadow on the floor under
+       items shown on their own */
+    var wg = ic.createRadialGradient(w / 2, h * 0.3, 4, w / 2, h * 0.42, h * 0.62);
+    wg.addColorStop(0, 'rgba(170, 228, 255, 0.5)');
+    wg.addColorStop(1, 'rgba(20, 70, 130, 0)');
+    ic.fillStyle = wg;
+    ic.fillRect(0, 0, w, h);
+    if (own || tab.field === 'wand' || tab.field === 'back') {
+      ic.fillStyle = 'rgba(2, 16, 46, 0.3)';
+      ic.beginPath();
+      ic.ellipse(w / 2, h - 31, 25, 4.5, 0, 0, Math.PI * 2);
+      ic.fill();
+    }
+    ic.save();
+    ic.translate(2, 2);
+    paintIcon(ic, tab, variantId, look);
+    ic.restore();
+    var bg = ic.createLinearGradient(0, h - 27, 0, h - 19);
+    bg.addColorStop(0, 'rgba(5, 22, 54, 0)');
+    bg.addColorStop(1, 'rgba(5, 22, 54, 0.86)');
+    ic.fillStyle = bg;
+    ic.fillRect(0, h - 27, w, 27);
+    ic.restore();
+    ic.fillStyle = '#e4f2ff';
+    ic.font = 'bold 12px ' + FONT;
+    ic.textAlign = 'center';
+    ic.textBaseline = 'middle';
+    ic.fillText(label, w / 2, h - 10, w - 10);
+    iconCache[key] = iconLast[slot] = cv;
     iconCount++;
     return cv;
+  }
+  /* The option a tab's own picture shows: its current choice, or its
+     signature item while nothing of its own is on */
+  function tabIconVariant(tab) {
+    var cur = Game.customization[tab.field], sig = null;
+    for (var i = 0; i < tab.variants.length; i++) {
+      if (tab.variants[i].id === cur && cur !== 'none') return tab.variants[i];
+      if (tab.variants[i].id === tab.icon) sig = tab.variants[i];
+    }
+    return sig;
   }
 
   function shadeHex(hex, k) {
@@ -1561,94 +1630,195 @@
     c.strokeStyle = col;
     c.stroke();
   }
-
-  /* One option tile: glossy card, a lit well holding the rendered icon,
-     the label, and for the chosen one a gold rim, glow and check badge */
-  function drawOptionTile(c, x, y, w, h, selected, hot, icon, label) {
-    c.save();
-    var g = c.createLinearGradient(0, y, 0, y + h);
-    if (selected) { g.addColorStop(0, '#3f8bcc'); g.addColorStop(1, '#1d4f88'); }
-    else if (hot) { g.addColorStop(0, '#265886'); g.addColorStop(1, '#173d66'); }
-    else { g.addColorStop(0, '#1b4069'); g.addColorStop(1, '#0f284a'); }
-    if (selected) { c.shadowColor = 'rgba(255, 210, 100, 0.75)'; c.shadowBlur = 12; }
-    roundRect(c, x, y, w, h, 10);
-    c.fillStyle = g;
+  function checkBadge(c, bx, by) {
+    c.beginPath();
+    c.arc(bx, by, 8, 0, Math.PI * 2);
+    c.fillStyle = '#ffd86e';
     c.fill();
-    c.shadowBlur = 0;
-    c.shadowColor = 'rgba(0, 0, 0, 0)';
-    roundRect(c, x + 2, y + 2, w - 4, h * 0.42, 8);
-    c.fillStyle = 'rgba(255, 255, 255, 0.07)';
-    c.fill();
-    /* icon well */
-    var wx = x + 4, wy = y + (h - ICON) / 2;
-    var wg = c.createRadialGradient(wx + ICON / 2, wy + ICON * 0.4, 3, wx + ICON / 2, wy + ICON / 2, ICON * 0.62);
-    wg.addColorStop(0, selected ? 'rgba(190, 236, 255, 0.55)' : 'rgba(150, 215, 255, 0.36)');
-    wg.addColorStop(1, 'rgba(20, 70, 130, 0.25)');
-    roundRect(c, wx, wy, ICON, ICON, 9);
-    c.fillStyle = wg;
-    c.fill();
-    c.strokeStyle = 'rgba(200, 240, 255, 0.16)';
+    c.strokeStyle = '#a06a10';
     c.lineWidth = 1;
     c.stroke();
+    c.lineWidth = 2.2;
+    checkMark(c, bx, by, 3.8, '#5a3404');
+  }
+  function pressed() { return !!(Game.input.pointer && Game.input.pointer.down); }
+
+  /* One option tile: its baked face over a flat contact shadow, and
+     for the chosen one a brighter card, gold rim, glow and check badge.
+     It lifts on hover and sinks while pressed. */
+  function drawOptionTile(c, x, y, w, h, selected, hot, face) {
     c.save();
-    roundRect(c, wx, wy, ICON, ICON, 9);
-    c.clip();
-    c.drawImage(icon, wx, wy, ICON, ICON);
-    c.restore();
-    /* rim */
-    roundRect(c, x + 0.5, y + 0.5, w - 1, h - 1, 10);
-    if (selected) { c.strokeStyle = '#ffd86e'; c.lineWidth = 2.5; }
-    else { c.strokeStyle = hot ? 'rgba(160, 220, 255, 0.55)' : 'rgba(140, 200, 255, 0.22)'; c.lineWidth = 1; }
-    c.stroke();
-    /* label */
-    var lx = x + ICON + 11, maxW = w - ICON - 15 - (selected ? 16 : 0);
-    c.fillStyle = selected ? '#ffffff' : '#d4eaff';
-    fitFont(c, label, maxW, 13, 'bold');
-    c.textAlign = 'left';
-    c.textBaseline = 'middle';
-    c.fillText(label, lx, y + h / 2 + 1);
+    var k = hot ? (pressed() ? 0.96 : 1.03) : 1;
+    if (k !== 1) {
+      c.translate(x + w / 2, y + h / 2);
+      c.scale(k, k);
+      c.translate(-x - w / 2, -y - h / 2);
+    }
     if (selected) {
-      var bx = x + w - 11, by = y + 11;
-      c.beginPath();
-      c.arc(bx, by, 7.5, 0, Math.PI * 2);
+      c.shadowColor = 'rgba(255, 210, 100, 0.8)';
+      c.shadowBlur = 12;
+      roundRect(c, x, y, w, h, 10);
       c.fillStyle = '#ffd86e';
       c.fill();
-      c.strokeStyle = '#a06a10';
-      c.lineWidth = 1;
-      c.stroke();
-      c.lineWidth = 2;
-      checkMark(c, bx, by, 3.6, '#5a3404');
+      c.shadowBlur = 0;
+      c.shadowColor = 'rgba(0, 0, 0, 0)';
+    } else {
+      roundRect(c, x, y + (hot ? 4 : 2.5), w, h, 10);
+      c.fillStyle = 'rgba(0, 8, 30, 0.4)';
+      c.fill();
     }
+    c.drawImage(face, x, y, w, h);
+    roundRect(c, x + 1, y + 1, w - 2, h - 2, 9);
+    if (selected) {
+      c.fillStyle = 'rgba(150, 215, 255, 0.2)';
+      c.fill();
+      c.strokeStyle = '#ffd86e';
+      c.lineWidth = 2.5;
+    } else {
+      c.strokeStyle = hot ? 'rgba(190, 236, 255, 0.85)' : 'rgba(150, 210, 255, 0.32)';
+      c.lineWidth = hot ? 1.5 : 1;
+    }
+    c.stroke();
+    if (selected) checkBadge(c, x + w - 11, y + 11);
     c.restore();
   }
 
-  /* A glossy colour bead; the chosen one gets a gold halo and a check */
-  function drawSwatch(c, cx, cy, col, selected, hot) {
+  /* A picture tab: the tab's current choice in miniature */
+  function drawTab(c, x, tab, active) {
+    var hot = pointerOver(c, x, TAB_Y, TAB_W, TAB_H);
+    var g = c.createLinearGradient(0, TAB_Y, 0, TAB_Y + TAB_H);
+    if (active) { g.addColorStop(0, '#62bcf6'); g.addColorStop(1, '#2a72b6'); }
+    else if (hot) { g.addColorStop(0, '#2f6a9e'); g.addColorStop(1, '#1c4670'); }
+    else { g.addColorStop(0, '#1e4670'); g.addColorStop(1, '#112b4a'); }
     c.save();
-    if (selected || hot) {
-      c.beginPath();
-      c.arc(cx, cy, 18, 0, Math.PI * 2);
-      c.fillStyle = selected ? 'rgba(255, 216, 110, 0.22)' : 'rgba(160, 220, 255, 0.15)';
-      c.fill();
-      c.strokeStyle = selected ? '#ffd86e' : 'rgba(160, 220, 255, 0.6)';
-      c.lineWidth = selected ? 2.5 : 1.5;
-      c.stroke();
-    }
-    var g = c.createRadialGradient(cx - 4, cy - 5, 1, cx, cy, 14);
-    g.addColorStop(0, shadeHex(col, 0.45));
-    g.addColorStop(0.45, col);
-    g.addColorStop(1, shadeHex(col, -0.35));
-    c.beginPath();
-    c.arc(cx, cy, 13, 0, Math.PI * 2);
+    if (active) { c.shadowColor = 'rgba(255, 210, 100, 0.6)'; c.shadowBlur = 8; }
+    roundRect(c, x, TAB_Y, TAB_W, TAB_H, 9);
     c.fillStyle = g;
     c.fill();
-    c.strokeStyle = 'rgba(0, 10, 30, 0.45)';
+    c.restore();
+    /* the picture part of that option's tile face, inset so its square
+       corners stay inside the tab's round ones */
+    c.globalAlpha = active ? 1 : hot ? 0.9 : 0.72;
+    var iw = TAB_W - 7, ih = TAB_H - 7, sw = ICON_W - 4, sh = sw * ih / iw;
+    c.drawImage(optionFace(tab, tabIconVariant(tab)), 4 * ICON_RES, (ICON_VIS + 2 - sh) * ICON_RES, sw * ICON_RES, sh * ICON_RES,
+      x + 3.5, TAB_Y + 3.5, iw, ih);
+    c.globalAlpha = 1;
+    roundRect(c, x + 0.5, TAB_Y + 0.5, TAB_W - 1, TAB_H - 1, 9);
+    c.strokeStyle = active ? '#ffd86e' : hot ? 'rgba(190, 236, 255, 0.7)' : 'rgba(140, 200, 255, 0.28)';
+    c.lineWidth = active ? 2.5 : 1;
+    c.stroke();
+  }
+
+  /* Page arrow */
+  function drawPager(c, x, dir) {
+    var hot = pointerOver(c, x, HEAD_Y, PAGER_W, HEAD_H), oy = hot && pressed() ? 1 : 0;
+    var g = c.createLinearGradient(0, HEAD_Y, 0, HEAD_Y + HEAD_H);
+    g.addColorStop(0, hot ? '#46a4dc' : '#2f86c0');
+    g.addColorStop(1, hot ? '#1f6aa4' : '#165288');
+    roundRect(c, x, HEAD_Y + 2 + oy, PAGER_W, HEAD_H - 4, 9);
+    c.fillStyle = g;
+    c.fill();
+    c.strokeStyle = hot ? '#ffffff' : 'rgba(124, 232, 255, 0.75)';
+    c.lineWidth = 1.5;
+    c.stroke();
+    var mx = x + PAGER_W / 2, my = HEAD_Y + HEAD_H / 2 + oy;
+    c.beginPath();
+    c.moveTo(mx + dir * 7, my);
+    c.lineTo(mx - dir * 5, my - 8);
+    c.lineTo(mx - dir * 5, my + 8);
+    c.closePath();
+    c.fillStyle = '#ffffff';
+    c.fill();
+  }
+
+  /* A colour chip shaped like what it colours: a glossy lock for hair,
+     a stitched swatch for cloth and shoes, a cut gem for the accent, a
+     soft bead for skin. */
+  function drawSwatch(c, cx, cy, col, kind) {
+    c.save();
+    var g = c.createRadialGradient(cx - 4, cy - 5, 1, cx, cy, 14);
+    g.addColorStop(0, shadeHex(col, kind === 'skin' ? 0.25 : 0.45));
+    g.addColorStop(0.45, col);
+    g.addColorStop(1, shadeHex(col, kind === 'skin' ? -0.2 : -0.35));
+    c.beginPath();
+    if (kind === 'cloth') {
+      roundRect(c, cx - 11.5, cy - 11.5, 23, 23, 6);
+    } else if (kind === 'gem') {
+      for (var i = 0; i < 8; i++) {
+        var a = Math.PI / 8 + i * Math.PI / 4;
+        if (i) c.lineTo(cx + Math.cos(a) * 13.5, cy + Math.sin(a) * 13.5);
+        else c.moveTo(cx + Math.cos(a) * 13.5, cy + Math.sin(a) * 13.5);
+      }
+      c.closePath();
+    } else {
+      c.arc(cx, cy, 12.5, 0, Math.PI * 2);
+    }
+    c.fillStyle = g;
+    c.fill();
+    c.strokeStyle = 'rgba(0, 10, 30, 0.5)';
     c.lineWidth = 1;
     c.stroke();
+    if (kind === 'cloth') {
+      /* a fold across the corner, a line of stitches */
+      c.beginPath();
+      c.moveTo(cx + 11.5, cy - 2); c.lineTo(cx + 11.5, cy + 5.5); c.quadraticCurveTo(cx + 11.5, cy + 11.5, cx + 5.5, cy + 11.5); c.lineTo(cx - 2, cy + 11.5);
+      c.closePath();
+      c.fillStyle = 'rgba(0, 10, 40, 0.18)';
+      c.fill();
+      c.setLineDash([2.5, 2.5]);
+      roundRect(c, cx - 8.5, cy - 8.5, 17, 17, 4);
+      c.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      c.lineWidth = 1;
+      c.stroke();
+      c.setLineDash([]);
+    } else if (kind === 'gem') {
+      /* table facet and the edges running to it */
+      c.beginPath();
+      for (var f = 0; f < 8; f++) {
+        var fa = Math.PI / 8 + f * Math.PI / 4;
+        c.moveTo(cx + Math.cos(fa) * 13.5, cy + Math.sin(fa) * 13.5);
+        c.lineTo(cx + Math.cos(fa) * 7, cy + Math.sin(fa) * 7);
+        c.lineTo(cx + Math.cos(fa + Math.PI / 4) * 7, cy + Math.sin(fa + Math.PI / 4) * 7);
+      }
+      c.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      c.lineWidth = 0.8;
+      c.stroke();
+      c.beginPath();
+      c.moveTo(cx - 6.5, cy - 2.7); c.lineTo(cx - 2.7, cy - 6.5); c.lineTo(cx - 9.5, cy - 9.5);
+      c.closePath();
+      c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      c.fill();
+    } else if (kind === 'hair') {
+      /* strands and the ring of gloss round a lock */
+      c.beginPath();
+      c.arc(cx - 16, cy + 2, 21, -0.5, 0.4);
+      c.moveTo(cx + 9.6, cy - 6);
+      c.arc(cx - 8, cy + 2, 19, -0.45, 0.45);
+      c.strokeStyle = 'rgba(0, 10, 40, 0.22)';
+      c.lineWidth = 0.9;
+      c.stroke();
+      c.beginPath();
+      c.ellipse(cx, cy - 1, 9.5, 6.5, 0, Math.PI * 1.08, Math.PI * 1.92);
+      c.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+      c.lineWidth = 2.2;
+      c.lineCap = 'round';
+      c.stroke();
+    } else {
+      c.beginPath();
+      c.ellipse(cx - 4, cy - 5.5, 4.5, 2.6, -0.5, 0, Math.PI * 2);
+      c.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      c.fill();
+    }
+    c.restore();
+  }
+  /* The chosen chip's gold ring and check, or the hovered one's ring */
+  function drawChipMark(c, cx, cy, selected) {
+    c.save();
     c.beginPath();
-    c.ellipse(cx - 4, cy - 5.5, 4.5, 2.6, -0.5, 0, Math.PI * 2);
-    c.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    c.fill();
+    c.arc(cx, cy, 16.5, 0, Math.PI * 2);
+    c.strokeStyle = selected ? '#ffd86e' : 'rgba(160, 220, 255, 0.6)';
+    c.lineWidth = selected ? 2.5 : 1.5;
+    c.stroke();
     if (selected) {
       c.lineWidth = 3.4;
       checkMark(c, cx, cy + 1, 4.5, 'rgba(0, 20, 40, 0.55)');
@@ -1657,10 +1827,58 @@
     }
     c.restore();
   }
+  /* The chips under the grid: the tab's colours and the skin tones,
+     with their captions. The chips themselves are baked once per tab
+     and language into a strip; a frame blits it and marks the chosen
+     and hovered ones. */
+  var CHIP_STRIP_X = 300, CHIP_STRIP_Y = 318, CHIP_STRIP_W = 484, CHIP_STRIP_H = 86, chipStrips = {};
+  function chipBlocks(tab) {
+    var out = [];
+    if (tab.colorField) out.push({ colors: tab.colors, field: tab.colorField, label: tab.colorLabel, kind: tab.chip, skin: false });
+    out.push({ colors: skinTones, field: 'skin', label: 'skinTone', kind: 'skin', skin: true });
+    return out;
+  }
+  function chipStrip(tab, blocks) {
+    var key = tab.id + '|' + Game.i18n.t(blocks[0].label) + '|' + Game.i18n.t('skinTone');
+    if (chipStrips[key]) return chipStrips[key];
+    var cv = document.createElement('canvas');
+    cv.width = CHIP_STRIP_W * ICON_RES;
+    cv.height = CHIP_STRIP_H * ICON_RES;
+    var ic = cv.getContext('2d');
+    ic.scale(ICON_RES, ICON_RES);
+    ic.translate(-CHIP_STRIP_X, -CHIP_STRIP_Y);
+    for (var b = 0; b < blocks.length; b++) {
+      var bl = blocks[b];
+      ic.fillStyle = '#9cc4e8';
+      ic.font = 'bold 12px ' + FONT;
+      ic.textAlign = 'left';
+      ic.fillText(Game.i18n.t(bl.label), chipPos(tab, 0, bl.skin).x - 16, CHIP_LABEL_Y);
+      for (var i = 0; i < bl.colors.length; i++) {
+        var p = chipPos(tab, i, bl.skin);
+        drawSwatch(ic, p.x, p.y, bl.colors[i], bl.kind);
+      }
+    }
+    chipStrips[key] = cv;
+    return cv;
+  }
+  function drawChips(c, tab) {
+    var blocks = chipBlocks(tab);
+    c.drawImage(chipStrip(tab, blocks), CHIP_STRIP_X, CHIP_STRIP_Y, CHIP_STRIP_W, CHIP_STRIP_H);
+    for (var b = 0; b < blocks.length; b++) {
+      var bl = blocks[b], sel = Game.customization[bl.field];
+      for (var i = 0; i < bl.colors.length; i++) {
+        var p = chipPos(tab, i, bl.skin), chosen = bl.colors[i] === sel;
+        if (chosen || pointerOver(c, p.x - CHIP_STEP_X / 2, p.y - CHIP_STEP_Y / 2, CHIP_STEP_X, CHIP_STEP_Y)) {
+          drawChipMark(c, p.x, p.y, chosen);
+        }
+      }
+    }
+  }
 
   function drawCustomizeScreen(c) {
     customizeTimer++;
     var t = customizeTimer;
+    iconBudget = 4;
 
     /* Background – the title's sea, dimmed so the controls stay legible */
     drawSeaBackdrop(c, t, false, floorBelowY());
@@ -1669,31 +1887,31 @@
     drawFloorBelow(c, t);
     clipGame(c);
 
-    /* Title */
+    /* Title, over the preview */
+    var stageCX = 146, stageCY = 244;
     c.save();
-    c.font = 'bold 26px ' + FONT;
+    fitFont(c, Game.i18n.t('customize'), 268, 24, 'bold');
     c.textAlign = 'center';
     c.lineJoin = 'round';
     c.lineWidth = 5;
     c.strokeStyle = 'rgba(4, 20, 44, 0.9)';
-    c.strokeText(Game.i18n.t('customize'), W / 2, 38);
+    c.strokeText(Game.i18n.t('customize'), stageCX, 38);
     c.fillStyle = '#7fd8ff';
-    c.fillText(Game.i18n.t('customize'), W / 2, 38);
+    c.fillText(Game.i18n.t('customize'), stageCX, 38);
     c.restore();
 
     /* Panel card behind the controls */
     drawPanel(c, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 16, 'rgba(16, 58, 104, 0.93)', 'rgba(6, 24, 54, 0.95)', 'rgba(124, 232, 255, 0.75)');
 
     /* Preview stage – soft radial glow so Momoko pops against the bg */
-    var stageCX = 150, stageCY = 236;
     var stageGrad = c.createRadialGradient(stageCX, stageCY, 20, stageCX, stageCY, 150);
     stageGrad.addColorStop(0, 'rgba(120,200,255,0.28)');
     stageGrad.addColorStop(1, 'rgba(120,200,255,0)');
     c.fillStyle = stageGrad;
-    c.fillRect(0, 70, 300, 340);
+    c.fillRect(0, 70, 292, 350);
 
     /* Sandy rock pedestal she stands on */
-    var pedY = 336;
+    var pedY = 346;
     c.fillStyle = 'rgba(0, 0, 0, 0.3)';
     c.beginPath();
     c.ellipse(stageCX, pedY + 20, 96, 14, 0, 0, Math.PI * 2);
@@ -1724,97 +1942,64 @@
     c.save();
     c.translate(stageCX - 70, stageCY - 88 + Math.sin(t * 0.04) * 3);
     c.scale(5, 5);
-    drawMomokoPreview(c, Game.customization);
+    drawMomokoPreview(c, Game.customization, t);
     c.restore();
 
     /* Tab bar */
-    for (var ti = 0; ti < customTabs.length; ti++) {
-      var tx = TAB_X + ti * (TAB_W + TAB_GAP);
-      var tab = customTabs[ti];
-      var active = customSelection.tab === tab.id;
-      var tabHot = pointerOver(c, tx, TAB_Y, TAB_W, TAB_H);
-      var tg = c.createLinearGradient(0, TAB_Y, 0, TAB_Y + TAB_H);
-      if (active) { tg.addColorStop(0, '#56b2f0'); tg.addColorStop(1, '#2a72b6'); }
-      else if (tabHot) { tg.addColorStop(0, '#2c6496'); tg.addColorStop(1, '#1c4670'); }
-      else { tg.addColorStop(0, '#1c4269'); tg.addColorStop(1, '#122d4d'); }
-      c.fillStyle = tg;
-      roundRect(c, tx, TAB_Y, TAB_W, TAB_H, 8);
-      c.fill();
-      roundRect(c, tx + 2, TAB_Y + 2, TAB_W - 4, TAB_H * 0.42, 6);
-      c.fillStyle = 'rgba(255, 255, 255, ' + (active ? 0.16 : 0.06) + ')';
-      c.fill();
-      roundRect(c, tx + 0.5, TAB_Y + 0.5, TAB_W - 1, TAB_H - 1, 8);
-      c.strokeStyle = active ? '#ffd86e' : 'rgba(140, 200, 255, 0.25)';
-      c.lineWidth = active ? 2 : 1;
-      c.stroke();
-      c.fillStyle = active ? '#ffffff' : '#a9cdee';
-      fitFont(c, Game.i18n.t(tab.label), TAB_W - 8, 12, 'bold');
-      c.textAlign = 'center';
-      c.textBaseline = 'middle';
-      c.fillText(Game.i18n.t(tab.label), tx + TAB_W / 2, TAB_Y + TAB_H / 2 + 1);
-    }
-    c.textBaseline = 'alphabetic';
-
-    /* Variant grid for the active tab: rendered previews */
     var activeTab = getTab(customSelection.tab);
-    var currentVariantId = Game.customization[activeTab.field] || 'none';
-    for (var vi = 0; vi < activeTab.variants.length; vi++) {
-      var row = Math.floor(vi / GRID_COLS);
-      var col = vi % GRID_COLS;
-      var gx = GRID_X + col * (GRID_TILE_W + GRID_GAP);
-      var gy = GRID_Y + row * (GRID_TILE_H + GRID_GAP);
-      var v = activeTab.variants[vi];
-      drawOptionTile(c, gx, gy, GRID_TILE_W, GRID_TILE_H, v.id === currentVariantId,
-        pointerOver(c, gx, gy, GRID_TILE_W, GRID_TILE_H), optionIcon(activeTab, v.id), Game.i18n.t(v.label));
+    for (var ti = 0; ti < customTabs.length; ti++) {
+      drawTab(c, TAB_X + ti * TAB_STEP, customTabs[ti], customTabs[ti] === activeTab);
     }
-    c.textBaseline = 'alphabetic';
 
-    /* Color swatches (when the active tab has a color dimension) */
-    /* Color row anchor follows the grid so tabs with fewer variants pull
-       the colors up instead of leaving a big empty band. */
-    var colorY = colorYFor(activeTab);
-    if (activeTab.colorField && activeTab.colors) {
-      var labelKey = activeTab.colorField === 'hair' ? 'hairColor'
-                   : activeTab.colorField === 'suit' ? 'suitColor'
-                   : 'shoeColor';
-      c.fillStyle = '#9cc4e8';
-      c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
-      c.textAlign = 'left';
-      c.fillText(Game.i18n.t(labelKey), COLOR_X, colorY - 8);
-      var selColor = Game.customization[activeTab.colorField];
-      for (var ci = 0; ci < activeTab.colors.length; ci++) {
-        var ccx = COLOR_X + ci * COLOR_STEP + 16;
-        var ccy = colorY + 16;
-        drawSwatch(c, ccx, ccy, activeTab.colors[ci], activeTab.colors[ci] === selColor,
-          pointerOver(c, ccx - 16, ccy - 16, 32, 32));
+    /* Heading: the tab's name, and the pager when it needs one */
+    var pages = pageCount(activeTab), page = Math.min(customSelection.page, pages - 1);
+    c.fillStyle = '#eaf6ff';
+    c.font = 'bold 17px ' + FONT;
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    c.fillText(Game.i18n.t(activeTab.label), GRID_X + 2, HEAD_Y + HEAD_H / 2 + 1);
+    if (pages > 1) {
+      drawPager(c, PAGER_PREV_X, -1);
+      drawPager(c, PAGER_NEXT_X, 1);
+      var mid = (PAGER_PREV_X + PAGER_W + PAGER_NEXT_X) / 2;
+      for (var pi = 0; pi < pages; pi++) {
+        c.beginPath();
+        c.arc(mid + (pi - (pages - 1) / 2) * 16, HEAD_Y + HEAD_H / 2, pi === page ? 5 : 3.5, 0, Math.PI * 2);
+        c.fillStyle = pi === page ? '#ffd86e' : 'rgba(170, 215, 255, 0.45)';
+        c.fill();
       }
     }
 
-    /* Skin tones – always visible regardless of tab (it's the only axis
-       that doesn't belong to a category but still matters) */
-    c.fillStyle = '#9cc4e8';
-    c.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
-    c.textAlign = 'left';
-    var skinY = skinYFor(activeTab);
-    c.fillText(Game.i18n.t('skinTone'), COLOR_X, skinY - 20);
-    for (var ki = 0; ki < skinTones.length; ki++) {
-      var kcx = COLOR_X + ki * COLOR_STEP + 16;
-      var kcy = skinY;
-      drawSwatch(c, kcx, kcy, skinTones[ki], skinTones[ki] === Game.customization.skin,
-        pointerOver(c, kcx - 16, kcy - 16, 32, 32));
+    /* Variant grid for the active tab: rendered pictures */
+    var currentVariantId = Game.customization[activeTab.field];
+    var hotTile = -1;
+    for (var vi = page * PER_PAGE; vi < Math.min(activeTab.variants.length, (page + 1) * PER_PAGE); vi++) {
+      var r = tileRect(vi - page * PER_PAGE), v = activeTab.variants[vi];
+      /* the hovered tile lifts, so it is drawn last, over its neighbours */
+      if (pointerOver(c, r.x, r.y, GRID_TILE_W, GRID_TILE_H)) { hotTile = vi; continue; }
+      drawOptionTile(c, r.x, r.y, GRID_TILE_W, GRID_TILE_H, v.id === currentVariantId, false, optionFace(activeTab, v));
     }
+    if (hotTile >= 0) {
+      var hr = tileRect(hotTile - page * PER_PAGE), hv = activeTab.variants[hotTile];
+      drawOptionTile(c, hr.x, hr.y, GRID_TILE_W, GRID_TILE_H, hv.id === currentVariantId, true, optionFace(activeTab, hv));
+    }
+
+    /* Colour chips for the tab, and skin tones – always there, since
+       skin belongs to no category but still matters */
+    drawChips(c, activeTab);
+    c.textBaseline = 'alphabetic';
 
     /* Start button */
     drawButton(c, Game.i18n.t('startGame'), START_BTN_X, START_BTN_Y, START_BTN_W, START_BTN_H, false, 'primary');
   }
 
-  function drawMomokoPreview(c, cust) {
+  function drawMomokoPreview(c, cust, t) {
     if (!Game.entities) return;
     if (Game.entities.drawMomokoSprite) Game.entities.drawMomokoSprite(c, 0, 0, cust, 0);
-    /* Crab pet appears next to her feet in the preview so the player can
-       see the companion they just picked. */
+    /* Sea friend appears next to her feet in the preview so the player
+       can see the companion they just picked. */
     if (Game.entities.drawCrabPet && cust.crab && cust.crab !== 'none') {
-      Game.entities.drawCrabPet(c, -8, 32, cust.crab, 0);
+      Game.entities.drawCrabPet(c, -8, 32, cust.crab, t);
     }
   }
 
@@ -1835,9 +2020,9 @@
   function handleCustomizeClick(mx, my) {
     /* Tab bar */
     for (var ti = 0; ti < customTabs.length; ti++) {
-      var tx = TAB_X + ti * (TAB_W + TAB_GAP);
-      if (hitButton(mx, my, tx, TAB_Y, TAB_W, TAB_H)) {
+      if (hitButton(mx, my, TAB_X + ti * TAB_STEP - 1.5, TAB_Y - 4, TAB_STEP, TAB_H + 8)) {
         customSelection.tab = customTabs[ti].id;
+        customSelection.page = pageOfChoice(customTabs[ti]);
         Game.audio.play('select');
         return null;
       }
@@ -1845,43 +2030,38 @@
 
     var activeTab = getTab(customSelection.tab);
 
+    /* Pager */
+    var pages = pageCount(activeTab), page = Math.min(customSelection.page, pages - 1);
+    if (pages > 1) {
+      var step = hitButton(mx, my, PAGER_PREV_X - 4, HEAD_Y - 3, PAGER_W + 8, HEAD_H + 6) ? -1 :
+        hitButton(mx, my, PAGER_NEXT_X - 4, HEAD_Y - 3, PAGER_W + 8, HEAD_H + 6) ? 1 : 0;
+      if (step) {
+        customSelection.page = (page + step + pages) % pages;
+        Game.audio.play('select');
+        return null;
+      }
+    }
+
     /* Variant tiles */
-    for (var vi = 0; vi < activeTab.variants.length; vi++) {
-      var row = Math.floor(vi / GRID_COLS);
-      var col = vi % GRID_COLS;
-      var gx = GRID_X + col * (GRID_TILE_W + GRID_GAP);
-      var gy = GRID_Y + row * (GRID_TILE_H + GRID_GAP);
-      if (hitButton(mx, my, gx, gy, GRID_TILE_W, GRID_TILE_H)) {
+    for (var vi = page * PER_PAGE; vi < Math.min(activeTab.variants.length, (page + 1) * PER_PAGE); vi++) {
+      var r = tileRect(vi - page * PER_PAGE);
+      if (hitButton(mx, my, r.x, r.y, GRID_TILE_W, GRID_TILE_H)) {
         Game.customization[activeTab.field] = activeTab.variants[vi].id;
         Game.audio.play('select');
         return null;
       }
     }
 
-    /* Tab color swatches */
-    var colorY = colorYFor(activeTab);
-    if (activeTab.colorField && activeTab.colors) {
-      for (var ci = 0; ci < activeTab.colors.length; ci++) {
-        var ccx = COLOR_X + ci * COLOR_STEP + 16;
-        var ccy = colorY + 16;
-        var dx = mx - ccx, dy = my - ccy;
-        if (dx * dx + dy * dy < 17 * 17) {
-          Game.customization[activeTab.colorField] = activeTab.colors[ci];
+    /* Colour chips, then skin tones */
+    var blocks = chipBlocks(activeTab);
+    for (var b = 0; b < blocks.length; b++) {
+      for (var ci = 0; ci < blocks[b].colors.length; ci++) {
+        var p = chipPos(activeTab, ci, blocks[b].skin);
+        if (hitButton(mx, my, p.x - CHIP_STEP_X / 2, p.y - CHIP_STEP_Y / 2, CHIP_STEP_X, CHIP_STEP_Y)) {
+          Game.customization[blocks[b].field] = blocks[b].colors[ci];
           Game.audio.play('select');
           return null;
         }
-      }
-    }
-
-    /* Skin tone swatches (always shown) */
-    for (var ki = 0; ki < skinTones.length; ki++) {
-      var kcx = COLOR_X + ki * COLOR_STEP + 16;
-      var kcy = skinYFor(activeTab);
-      var kdx = mx - kcx, kdy = my - kcy;
-      if (kdx * kdx + kdy * kdy < 17 * 17) {
-        Game.customization.skin = skinTones[ki];
-        Game.audio.play('select');
-        return null;
       }
     }
 

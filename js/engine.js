@@ -28,7 +28,7 @@
   /* Version stamp shown on the title screen and pause menu. Bump manually
      at release time and tag the matching git release (`git tag vX.Y.Z`)
      so the in-game stamp lines up with the git tag for debugging. */
-  Game.VERSION = 'v2.7.0';
+  Game.VERSION = 'v2.8.0';
   Game.BUILD = '';
   var canvas, ctx;
 
@@ -106,20 +106,24 @@
   }
 
   /* ---- Customization defaults ----
-     Split across two concerns: tintable colors (hair/suit/skin/flipper) and
-     swappable variants (hairStyle/outfit/shoes/crab/food/acc). Variants are
-     strings that the sprite painter branches on; 'none' means skip. */
+     Split across two concerns: tintable colors (hair/suit/skin/flipper/trim)
+     and swappable variants (hairStyle/outfit/shoes/crab/food/acc/back/wand).
+     Variants are strings that the sprite painter branches on; 'none' means
+     skip. */
   Game.customization = {
     hair: '#e06088',
     suit: '#e06088',
     skin: '#ffddbb',
     flipper: '#ff99cc',
+    trim: '#ff4f8b',
     hairStyle: 'twinTails',
     outfit: 'frillyDress',
     shoes: 'maryJane',
     crab: 'none',
     food: 'none',
     acc: 'tiara',
+    back: 'none',
+    wand: 'star',
   };
 
   /* ---- Camera ---- */
